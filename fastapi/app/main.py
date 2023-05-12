@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 
 from datetime import timedelta, date, datetime
 
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, WebSocket, WebSocketException, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 # from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse,PlainTextResponse
@@ -425,7 +425,7 @@ async def get_time():
 
 # @app.get("/agencies/")
 # async def root():
-#     return {"Metro API Version": "2.1.23"}
+#     return {"Metro API Version": "2.1.24"}
 
 # WebSockets
 import random

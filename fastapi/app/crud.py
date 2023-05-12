@@ -218,6 +218,8 @@ def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(db,route_code: str, ge
         upcoming_stop_time_update_query = db.query(gtfs_models.StopTimeUpdate).filter(gtfs_models.StopTimeUpdate.trip_id == new_row.trip_id,gtfs_models.StopTimeUpdate.stop_sequence == new_row.current_stop_sequence).first()
         if upcoming_stop_time_update_query is not None:
             new_row.trip_assigned = True
+            trip_details_query = db.query(gtfs_models.TripUpdate).filter(gtfs_models.TripUpdate.trip_id == new_row.trip_id).first()
+            new_row.direction_id = trip_details_query.direction_id
         new_row.upcoming_stop_time_update = upcoming_stop_time_reformat(upcoming_stop_time_update_query)
         route_code_query = db.query(models.StopTimes.route_code).filter(models.StopTimes.trip_id == new_row.trip_id,models.StopTimes.stop_sequence == new_row.current_stop_sequence).first()
         destination_code_query = db.query(models.StopTimes.destination_code).filter(models.StopTimes.trip_id == new_row.trip_id,models.StopTimes.stop_sequence == new_row.current_stop_sequence).first()
@@ -255,6 +257,8 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(sessio
                         upcoming_update = upcoming_stop_time_reformat_for_async(upcoming_stop_time_update_query.scalars().first())
                         if upcoming_update:
                             new_geojson['properties']['trip']['upcoming_stop_time_update'] = upcoming_update
+                            trip_details_query = await session.execute(select(gtfs_models.TripUpdate).where(gtfs_models.TripUpdate.trip_id == new_row_trip_id))
+                            new_geojson['properties']['trip']['direction_id'] = trip_details_query.scalar().direction_id                            
                         route_code_query = await session.execute(select(models.StopTimes.route_code).where(models.StopTimes.trip_id == geojson_trip_id,models.StopTimes.stop_sequence == geojson_current_stop_sequence))
                         destination_code_query = await session.execute(select(models.StopTimes.destination_code).where(models.StopTimes.trip_id == geojson_trip_id,models.StopTimes.stop_sequence == geojson_current_stop_sequence))
                         if route_code_query:
@@ -283,6 +287,8 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(sessio
                 # upcoming_stop_time_update_query = db.select(gtfs_models.StopTimeUpdate).filter(gtfs_models.StopTimeUpdate.trip_id == new_row.trip_id,gtfs_models.StopTimeUpdate.stop_sequence == new_row.current_stop_sequence).first()
                 if upcoming_stop_time_update_query is not None:
                     new_row['trip_assigned'] = True
+                    trip_details_query = await session.execute(select(gtfs_models.TripUpdate).where(gtfs_models.TripUpdate.trip_id == new_row_trip_id))
+                    new_row['direction_id'] = trip_details_query.scalar().direction_id
                 new_row['upcoming_stop_time_update'] = upcoming_stop_time_reformat(upcoming_stop_time_update_query.scalars().first())
                 route_code_query = await session.execute(select(models.StopTimes.route_code).where(models.StopTimes.trip_id == new_row_trip_id,models.StopTimes.stop_sequence == new_row_current_stop_sequence))
                 # route_code_query = db.select(models.StopTimes.route_code).filter(models.StopTimes.trip_id == new_row.trip_id,models.StopTimes.stop_sequence == new_row.current_stop_sequence).first()

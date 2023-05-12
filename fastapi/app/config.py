@@ -1,11 +1,12 @@
 import os
-
+import logging
 try:
-    current_environment = os.environ.get('RUNNING_ENV')
-    if current_environment != 'prod':
-        from secrets import load_secrets
-        load_secrets()    
+    if os.path.isfile('app/secrets.py'):
+        print('Loading secrets from secrets.py')
+        from .secrets import load_secrets
+        load_secrets()
 except ModuleNotFoundError:
+    logging.info('No secrets.py found, loading from environment variables')
     pass
 
 class Config:
@@ -24,7 +25,7 @@ class Config:
     REMOTEPATH = '/nextbus/prod/'
     DEBUG = True
     REPODIR = "/gtfs_rail"
-    CURRENT_VERSION = "2.1.23"
+    CURRENT_VERSION = "2.1.24"
     API_LAST_UPDATE_TIME = os.path.getmtime(r'app/main.py')
     LOGZIO_TOKEN = os.environ.get('LOGZIO_TOKEN')
     LOGZIO_URL = os.environ.get('LOGZIO_URL')
