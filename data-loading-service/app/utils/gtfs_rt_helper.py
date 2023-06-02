@@ -118,6 +118,7 @@ def get_route_code_from_trip_route_id(trip_id,agency_id):
     if agency_id == 'LACMTA_Rail' and trip_id.startswith('8'):
         val = trip_id
     else:
+        ## TODO reference the routes table 
         val = str(trip_id).split('-')[0]
     return val
 
@@ -153,7 +154,13 @@ def update_gtfs_realtime_data():
                     'agency_id': agency,
                     'schedule_relationship': schedule_relationship_value
                 }
-                stop_time_array.append(this_stop_time_json)
+                stop_time_json_extra_fields = this_stop_time_json
+                stop_time_json_extra_fields['route_code'] = get_route_code_from_trip_route_id(entity.trip_update.trip.route_id,agency)
+                stop_time_json_extra_fields['start_time'] = entity.trip_update.trip.start_time
+                stop_time_json_extra_fields['start_date'] = entity.trip_update.trip.start_date
+                stop_time_json_extra_fields['direction_id'] = entity.trip_update.trip.direction_id
+
+                stop_time_array.append(stop_time_json_extra_fields)
                 this_stop_time_json_array.append(this_stop_time_json)
             string_of_json = str(this_stop_time_json_array)
             trip_update_array.append({

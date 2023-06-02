@@ -55,6 +55,11 @@ class StopTimeUpdate(GTFSrtBase):
     arrival = Column(Integer)
     departure = Column(Integer)
     agency_id = Column(String)
+    route_code = Column(String)
+    start_time = Column(String)
+    start_date = Column(String)
+    direction_id = Column(Integer)
+
     # TODO: Add domain
     schedule_relationship = Column(Integer)
     

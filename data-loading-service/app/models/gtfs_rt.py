@@ -28,6 +28,11 @@ class StopTimeUpdate(GTFSrtBase):
     stop_sequence = Column(Integer,default='')
     stop_id = Column(String(10),primary_key=True)
     agency_id = Column(String)
+
+    route_code = Column(String)
+    start_time = Column(String)
+    start_date = Column(String)
+    direction_id = Column(Integer)
     
     # TODO: Add domain
     schedule_relationship = Column(String(9))
