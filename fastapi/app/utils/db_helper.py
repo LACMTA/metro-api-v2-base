@@ -103,7 +103,6 @@ def vehicle_position_reformat(row,geojson=False):
                 row.geometry = JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
             except:
                 row.geometry = [row.position_longitude,row.position_latitude]
-
         if geojson == True:
             geojson_row['type'] = 'Feature'
             if row.geometry:
@@ -111,6 +110,7 @@ def vehicle_position_reformat(row,geojson=False):
                     geojson_row['geometry'] = row.geometry
                 except:
                     geojson_row['geometry'] = [row.position_longitude,row.position_latitude]
+                geojson_row['lineString'] = convert_geometry_to_line_string(row.geometry)
             properties['trip'] = trip_info
             properties['vehicle'] = vehicle_info
             properties['position'] = position_info
@@ -122,7 +122,14 @@ def vehicle_position_reformat(row,geojson=False):
         row.position = position_info
 
         return row
-
+def convert_geometry_to_line_string(geometry):
+    if geometry:
+        if geometry['type'] == 'Point':
+            return Point(geometry['coordinates']).wkt
+        if geometry['type'] == 'LineString':
+            return geo.LineString(geometry['coordinates']).wkt
+        if geometry['type'] == 'MultiLineString':
+            return geo.MultiLineString(geometry['coordinates']).wkt
 
 def vehicle_position_reformat_for_trip_details(row,geojson=False):
         trip_info = {}
@@ -158,6 +165,7 @@ def vehicle_position_reformat_for_trip_details(row,geojson=False):
             geojson_row['type'] = 'Feature'
             if row.geometry:
                 geojson_row['geometry'] = row.geometry
+                geojson_row['lineString'] = convert_geometry_to_line_string(row.geometry)
             properties['trip'] = trip_info
             properties['position'] = position_info
             properties['current_status'] = row.current_status
@@ -212,6 +220,7 @@ def vehicle_position_reformat_for_trip_details_for_async(row,geojson=False):
             geojson_row['type'] = 'Feature'
             if row.geometry:
                 geojson_row['geometry'] = JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
+                geojson_row['lineString'] = convert_geometry_to_line_string(row.geometry)
             if hasattr(row, 'trip_id'):
                 properties['trip'] = trip_info
                 properties['trip']['trip_id'] = trip_info['trip_id']

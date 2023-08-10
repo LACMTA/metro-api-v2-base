@@ -299,6 +299,58 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(sessio
         else:
             yield result
 
+def get_distinct_stop_ids(the_query):
+    stop_id_list = []
+    for row in the_query:
+        if row.stop_id not in stop_id_list:
+            stop_id_list.append(row.stop_id)
+    return stop_id_list
+
+async def get_gtfs_rt_line_detail_updates_for_route_code(session,route_code: str, geojson:bool,agency_id:str):
+    the_query = await session.execute(select(gtfs_models.StopTimeUpdate).where(gtfs_models.StopTimeUpdate.route_code == route_code,gtfs_models.StopTimeUpdate.agency_id == agency_id))
+
+    # function call to get list of distinct stop_ids from the_query results
+    stop_id_list = get_distinct_stop_ids(the_query.scalars().all())
+
+    # loop through list of distinct stop_ids to create a stop_list that has:
+    # - stop_sequence (might be different in result rows)
+    # - stop_name (from stops)
+    # - stop_id
+    # - lat
+    # - long
+    # - departure times (array of times from all result rows)
+    # - arrival times (array of times from all result rows)
+
+
+    # format the result as a geojson object
+    if geojson == True:
+        this_json = {}
+        count = 0
+        features = []
+        for row in the_query.scalars().all():
+            count += 1
+            new_geojson = '' # function call to reformat to geojson
+
+            # if new_geojson is valid (if at least 1 StopTimeUpdate exists), then do stuff
+
+            features.append(new_geojson)
+        this_json['metadata'] = {'count': count}
+        this_json['metadata'] = {'title': 'Stops'}
+        this_json['metadata'] = {'stop_list': stop_id_list}
+        this_json['type'] = "FeatureCollection"
+        this_json['features'] = features
+        yield this_json
+    else:
+        result = []
+        new_row = ''
+        result.append(new_row)
+
+        if result == []:
+            message_object = [{'message': 'No vehicle data for this vehicle id: ' + str(route_code)}]
+            yield message_object
+        else:
+            yield result
+
 
 def get_gtfs_rt_vehicle_positions_trip_data(db,vehicle_id: str,geojson:bool,agency_id: str):
     result = []
