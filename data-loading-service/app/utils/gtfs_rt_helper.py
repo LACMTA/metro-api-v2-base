@@ -41,7 +41,7 @@ SWIFTLY_API_REALTIME = 'https://api.goswift.ly/real-time/'
 SWIFTLY_GTFS_RT_TRIP_UPDATES = 'gtfs-rt-trip-updates'
 SWIFTLY_GTFS_RT_VEHICLE_POSITIONS = 'gtfs-rt-vehicle-positions'
 
-# engine = create_engine(Config.DB_URI, echo=False,executemany_mode="values")
+# engine = create_engine(Config.API_DB_URI, echo=False,executemany_mode="values")
 
 # Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

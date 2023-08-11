@@ -13,7 +13,7 @@ class Config:
     BASE_URL = "https://api.metro.net"
     REDIS_URL = "redis://redis:6379"
     TARGET_DB_SCHEMA = "metro_api"
-    DB_URI = os.environ.get('URI')
+    API_DB_URI = os.environ.get('API_DB_URI')
     SECRET_KEY = os.environ.get('HASH_KEY')
     ALGORITHM = os.environ.get('HASHING_ALGORITHM')
     ACCESS_TOKEN_EXPIRE_MINUTES  = 30

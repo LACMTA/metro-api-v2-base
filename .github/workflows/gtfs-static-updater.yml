@@ -23,5 +23,5 @@ jobs:
       - name: Update Database with latest data🛢
         run: python ./data-loading-service/app/gtfs_static_updater
         env:
-          DB_URI: ${{secrets.URI}}
+          API_DB_URI: ${{secrets.API_DB_URI}}
           TARGET_DB_SCHEMA: "metro_api"

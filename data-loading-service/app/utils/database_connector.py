@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from config import Config
 # from .utils.log_helper import *
 
-engine = create_engine(Config.DB_URI, echo=False)
+engine = create_engine(Config.API_DB_URI, echo=False)
 
 Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
