@@ -1,27 +1,29 @@
 import os
 import logging
 import versiontag
-
+import git
 
 def get_parent_folder_git_tag_version():
     full_version_tag = versiontag.get_version(pypi=True)
-    if len(full_version_tag.split('.')) > 2:
-        short_version_tag = full_version_tag.rsplit('.', 1)[0]
-        return short_version_tag    
+    if full_version_tag is None:
+        get_version_tag_from_online_github_repo()
     else:
-        return full_version_tag
-# try:
-#     if os.path.isfile('app/secrets.py'):
-#         print('Loading secrets from secrets.py')
-#         try:
-#             from .secrets import load_secrets
-#             load_secrets()
-#         except ModuleNotFoundError:
-#             logging.info('No secrets.py found, loading from environment variables')
-#             pass
-# except ModuleNotFoundError:
-#     logging.info('No secrets.py found, loading from environment variables')
-#     pass
+        if len(full_version_tag.split('.')) > 2:
+            short_version_tag = full_version_tag.rsplit('.', 1)[0]
+            return short_version_tag    
+        else:
+            return full_version_tag
+
+def get_version_tag_from_online_github_repo():
+    try:
+        g = git.cmd.Git()
+        blob = g.ls_remote('https://github.com/LACMTA/metro-api-v2', tags=True)
+        version_tag = blob.split('\n')[0].split('\t')[1].split('/')[2]
+        return version_tag
+    except Exception as e:
+        logging.info('Error getting version tag from github: ' + str(e))
+        return '0.0.error '+ str(e)
+
 
 def set_db_schema():
     try:
