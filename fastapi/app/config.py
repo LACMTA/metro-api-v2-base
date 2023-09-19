@@ -1,6 +1,8 @@
 import os
 import versiontag
 import logging
+import git
+
 try:
     if os.path.isfile('app/secrets.py'):
         print('Loading secrets from secrets.py')
@@ -10,15 +12,35 @@ except ModuleNotFoundError:
     logging.info('No secrets.py found, loading from environment variables')
     pass
 
-get_parent_folders_parent = lambda path: os.path.abspath(os.path.join(path, os.pardir, os.pardir))
+def get_local_version_tag():
+    parent_directory = os.path.dirname(os.path.dirname(os.path.dirname(os.getcwd())))
+    g = git.cmd.Git(parent_directory)
+    local_repo_details = g.describe('--tags')
+    local_version_tag = local_repo_details.split('-')[0]
+    return local_version_tag
 
 def get_parent_folder_git_tag_version():
-    full_version_tag = versiontag.get_version(pypi=True)
-    if len(full_version_tag.split('.')) > 2:
-        short_version_tag = full_version_tag.rsplit('.', 1)[0]
-        return short_version_tag    
-    else:
-        return full_version_tag
+    online_tag = get_version_tag_from_online_github_repo()
+    try:
+        local_tag = get_local_version_tag()
+        if local_tag != online_tag:
+                return local_tag
+        else:
+            return online_tag        
+    except Exception as e:
+        logging.info('Error getting local version tag: ' + str(e))
+        local_tag = '0.0.error '+ str(e)
+        return online_tag
+
+def get_version_tag_from_online_github_repo():
+    try:
+        g = git.cmd.Git()
+        blob = g.ls_remote('https://github.com/LACMTA/metro-api-v2', tags=True)
+        version_tag = blob.split('\n')[0].split('\t')[1].split('/')[2]
+        return version_tag
+    except Exception as e:
+        logging.info('Error getting version tag from github: ' + str(e))
+        return '0.0.error '+ str(e)
 
 class Config:
     BASE_URL = "https://api.metro.net"
