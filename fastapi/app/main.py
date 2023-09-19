@@ -1,6 +1,7 @@
 # import data modules
 from distutils.command.config import config
 from typing import Annotated
+from versiontag import get_version
 
 import http
 import json
@@ -531,7 +532,8 @@ def index(request:Request):
         human_readable_default_update = default_update.strftime('%Y-%m-%d %H:%M')
     except Exception as e:
         logger.exception(type(e).__name__ + ": " + str(e), exc_info=False)
-    return templates.TemplateResponse("index.html", context= {"request": request,"api_version":Config.CURRENT_VERSION,"update_time":human_readable_default_update})
+    
+    return templates.TemplateResponse("index.html", context= {"request": request,"current_api_version":Config.CURRENT_API_VERSION,"update_time":human_readable_default_update})
 
 class LogFilter(logging.Filter):
     def filter(self, record):

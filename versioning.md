@@ -1,3 +1,31 @@
+# Versioning
+
+## When to update
+In general, we keep the version number in sync with the API version number and use [Semantic Versioning](https://semver.org/).
+## How to update
+
+Run the following command from the root directory of the project:
+
+```shell
+git tag -a v2.1.10 -m "MVP Release"
+```
+
+### Checking the version
+
+```shell
+git tag
+```
+
+### Pushing the version
+
+```shell
+git push -tags
+```
+
+## Other notes
+
+### Versioning History
+
 (2.0.4)
 2.0.0
 

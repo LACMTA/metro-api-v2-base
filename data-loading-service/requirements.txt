@@ -22,3 +22,5 @@ GeoAlchemy2==0.10.2
 google
 protobuf==3.19.6
 polyline
+versiontag
+gitpython
