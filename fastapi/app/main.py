@@ -1,6 +1,7 @@
 # import data modules
 from distutils.command.config import config
 from typing import Annotated
+from versiontag import get_version
 
 import http
 import json
@@ -271,7 +272,7 @@ async def get_trip_detail(agency_id: AgencyIdEnum, vehicle_id: str, geojson:bool
 
 
 
-@app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data","Static Data"])
+@app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
 async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
     result = crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(db,route_code,geojson,agency_id.value)
     # crud.get_gtfs_rt_vehicle_positions_by_field_name(db,vehicle_id,geojson,agency_id.value)
@@ -340,7 +341,7 @@ async def get_line_detail_updates_for_route_code(websocket: WebSocket,agency_id:
             await websocket.close()
 
 @app.get("/{agency_id}/trip_detail_route_code/{route_code}",tags=["Real-Time data"])
-async def get_trip_detail(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
+async def get_trip_detail_and_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
     result_array = []
     temp_result = crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(db,route_code,geojson,agency_id.value)
     if len(temp_result) == 0:
@@ -476,8 +477,36 @@ async def get_time():
 
 # @app.get("/agencies/")
 # async def root():
-#     return {"Metro API Version": "2.1.26"}
 
+# WebSockets
+import random
+@app.websocket("/live/get_time")
+async def live_time_updates(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        payload = {"time": str(datetime.now()), "message": "Hello World!","value":random.randint(1,100)}
+        await websocket.send_json(payload)
+        await asyncio.sleep(10)
+
+@app.websocket("/{agency_id}/live/trip_detail/route_code/{route_code}")
+async def live_get_gtfs_rt_trip_details(websocket: WebSocket,agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: Session = Depends(get_async_db)):
+    await websocket.accept()
+    async with db as session:
+        try:
+            while True:
+                async for result in crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session,route_code,geojson,agency_id.value):
+                    await websocket.send_json(result)
+                    await session.commit()
+                    await asyncio.sleep(5)
+        except WebSocketDisconnect:
+            await websocket.close()
+            # result_array = []
+            # result_array = crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session,route_code,geojson,agency_id.value)
+            # await websocket.send_json(crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session,route_code,geojson,agency_id.value))
+            # await websocket.send_json(jsonable_encoder(result_array))
+        # payload = {"time": str(datetime.now()), "message": "Hello World!","value":random.randint(1,100)}
+        # await websocket.send_json(payload)
+        # await asyncio.sleep(10)
 
 # Frontend Routing
 @app.get("/websocket_test")
@@ -503,7 +532,8 @@ def index(request:Request):
         human_readable_default_update = default_update.strftime('%Y-%m-%d %H:%M')
     except Exception as e:
         logger.exception(type(e).__name__ + ": " + str(e), exc_info=False)
-    return templates.TemplateResponse("index.html", context= {"request": request,"api_version":Config.CURRENT_VERSION,"update_time":human_readable_default_update})
+    
+    return templates.TemplateResponse("index.html", context= {"request": request,"current_api_version":Config.CURRENT_API_VERSION,"update_time":human_readable_default_update})
 
 class LogFilter(logging.Filter):
     def filter(self, record):

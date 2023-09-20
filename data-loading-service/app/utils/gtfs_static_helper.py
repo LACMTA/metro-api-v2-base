@@ -10,7 +10,7 @@ from .database_connector import *
 import requests
 from io import StringIO
 # from .utils.log_helper import *
-# engine = create_engine(Config.DB_URI, echo=False,executemany_mode="values")
+# engine = create_engine(Config.API_DB_URI, echo=False,executemany_mode="values")
 # Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 CALENDAR_DATES_URL_BUS = 'https://gitlab.com/LACMTA/gtfs_bus/-/raw/weekly-updated-service/calendar_dates.txt'
