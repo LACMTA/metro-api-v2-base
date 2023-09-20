@@ -6,47 +6,46 @@ import utils.gopass_helper as gopass_helper
 import utils.main_helper as main_helper
 import threading
 import time
-from schedule import every, repeat, run_pending
 import pandas as pd
-# import schedule
 
-@repeat(every(main_helper.set_interval_time()).seconds)
+import crython
+# import schedule
+@crython.job(second='*/'+str(main_helper.set_interval_time())+'')
 def gtfs_rt_scheduler():
     try:
         gtfs_rt_helper.update_gtfs_realtime_data()
     except Exception as e:
         print('Error updating GTFS-RT data: ' + str(e))
 
-@repeat(every(1).day)
+@crython.job(expr='@daily')
 def go_pass_data_scheduler():
     try:
         gopass_helper.update_go_pass_data()
     except Exception as e:
-        print('Error updating GTFS-RT data: ' + str(e))
+        print('Error updating Go Pass data ' + str(e))
 
-@repeat(every(15).minutes)
+@crython.job(expr='* */15 * * * * *')
 def canceled_trips_update_scheduler():
     try:
         update_canceled_trips.run_update()
     except Exception as e:
         print('Error updating canceled trips: ' + str(e))
 
-@repeat(every(7).days)
+@crython.job(expr='@weekly')
 def calendar_dates_update_scheduler():
     try:
         gtfs_static_helper.update_calendar_dates()
-        # gtfs_static_helper.update_gtfs_static_files()
     except Exception as e:
-        print('Error updating canceled trips: ' + str(e))
+        print('Error updatin calendar dates: ' + str(e))
         
 def initial_load():
-    update_canceled_trips.run_update()
-    gtfs_rt_helper.update_gtfs_realtime_data()
-    gtfs_static_helper.update_calendar_dates()
-    # gtfs_static_helper.update_gtfs_static_files()
     gopass_helper.update_go_pass_data()
-        
+    update_canceled_trips.run_update()
+    # gtfs_rt_helper.update_gtfs_realtime_data()
+    gtfs_static_helper.update_calendar_dates()
+
+
 if __name__ == '__main__':
     initial_load()
-    while True:
-        run_pending()
+    crython.start()
+    crython.join()
