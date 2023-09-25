@@ -14,4 +14,5 @@ test.py
 notebooks/**.json
 notebooks/**.csv
 notebooks/**.zip
+notebooks/input
 "version.txt" 
