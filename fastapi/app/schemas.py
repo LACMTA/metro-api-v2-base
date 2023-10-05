@@ -55,6 +55,7 @@ class StopTimes(BaseModel):
     bay_num: int
     id: int
     agency_id: str
+    rider_usage_code: int
 
 class Stops(BaseModel):
     stop_id: int
