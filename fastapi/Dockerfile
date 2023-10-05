@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.3
-FROM python:3
+FROM python:3.11
 
 # 
 # WORKDIR /code
@@ -10,8 +10,15 @@ COPY ./requirements.txt requirements.txt
 # COPY use-secret.sh .
 # RUN --mount=type=secret,id=ftp_server ./use-secret.sh
 # RUN --mount=type=secret,id=ftp_server ./use_secret.sh
+
+RUN apt-get update && apt-get install -y \
+    libgeos-dev
+
+
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # 
+
+
 
 COPY ./app /app
 # COPY ../appdata ../appdata

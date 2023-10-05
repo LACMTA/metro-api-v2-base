@@ -22,7 +22,7 @@ from app import gtfs_models
 
 from . import models, schemas,gtfs_models
 from .config import Config
-from .database import Session,get_db,get_async_db
+from .database import Session,get_db
 from .utils.log_helper import *
 from .utils.email_helper import *
 from .utils.db_helper import *

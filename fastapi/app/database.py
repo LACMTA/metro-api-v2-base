@@ -13,8 +13,6 @@ def create_async_uri(uri):
 
 
 engine = create_engine(Config.API_DB_URI, echo=False, pool_pre_ping=True, pool_size=20, max_overflow=0)
-async_engine = create_async_engine(create_async_uri(Config.API_DB_URI), echo=False)
-async_session = sessionmaker(async_engine, expire_on_commit=False, class_=AsyncSession)
 Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # LocalSession = sessionmaker(autocommit=False, autoflush=True, bind=async_engine, expire_on_commit=True)
