@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 
 from datetime import timedelta, date, datetime
 
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 # from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse,PlainTextResponse
@@ -303,43 +303,6 @@ async def get_canceled_trip_summary(db: Session = Depends(get_db)):
                 "total_canceled_trips":total_canceled_trips,
                 "last_updated":update_time}
 
-
-# WebSockets
-import random
-@app.websocket("/live/get_time")
-async def live_time_updates(websocket: WebSocket):
-    await websocket.accept()
-    while True:
-        payload = {"time": str(datetime.now()), "message": "Hello World!","value":random.randint(1,100)}
-        await websocket.send_json(payload)
-        await asyncio.sleep(10)
-
-@app.websocket("/{agency_id}/live/trip_detail/route_code/{route_code}")
-async def live_get_gtfs_rt_trip_details(websocket: WebSocket,agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: Session = Depends(get_async_db)):
-    await websocket.accept()
-    async with db as session:
-        try:
-            while True:
-                async for result in crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session,route_code,geojson,agency_id.value):
-                    await websocket.send_json(result)
-                    await session.commit()
-                    await asyncio.sleep(5)
-        except WebSocketDisconnect:
-            await websocket.close()
-
-@app.websocket("/{agency_id}/live/line_detail_updates/{route_code}")
-async def get_line_detail_updates_for_route_code(websocket: WebSocket,agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: Session = Depends(get_async_db)):
-    await websocket.accept()
-    async with db as session:
-        try:
-            while True:
-                async for result in crud.get_gtfs_rt_line_detail_updates_for_route_code(session,route_code,geojson,agency_id.value):
-                    await websocket.send_json(result)
-                    await session.commit()
-                    await asyncio.sleep(5)
-        except WebSocketDisconnect:
-            await websocket.close()
-
 @app.get("/{agency_id}/trip_detail_route_code/{route_code}",tags=["Real-Time data"])
 async def get_trip_detail_and_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
     result_array = []
@@ -478,49 +441,6 @@ async def get_time():
 # @app.get("/agencies/")
 # async def root():
 
-# WebSockets
-import random
-@app.websocket("/live/get_time")
-async def live_time_updates(websocket: WebSocket):
-    await websocket.accept()
-    while True:
-        payload = {"time": str(datetime.now()), "message": "Hello World!","value":random.randint(1,100)}
-        await websocket.send_json(payload)
-        await asyncio.sleep(10)
-
-@app.websocket("/{agency_id}/live/trip_detail/route_code/{route_code}")
-async def live_get_gtfs_rt_trip_details(websocket: WebSocket,agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: Session = Depends(get_async_db)):
-    await websocket.accept()
-    async with db as session:
-        try:
-            while True:
-                async for result in crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session,route_code,geojson,agency_id.value):
-                    await websocket.send_json(result)
-                    await session.commit()
-                    await asyncio.sleep(5)
-        except WebSocketDisconnect:
-            await websocket.close()
-            # result_array = []
-            # result_array = crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session,route_code,geojson,agency_id.value)
-            # await websocket.send_json(crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session,route_code,geojson,agency_id.value))
-            # await websocket.send_json(jsonable_encoder(result_array))
-        # payload = {"time": str(datetime.now()), "message": "Hello World!","value":random.randint(1,100)}
-        # await websocket.send_json(payload)
-        # await asyncio.sleep(10)
-
-# Frontend Routing
-@app.get("/websocket_test")
-def read_root(request: Request):
-    return templates.TemplateResponse("ws.html", {"request": request})
-
-# class SPAStaticFiles(StaticFiles):
-#     async def get_response(self, path: str, scope):
-#         response = await super().get_response(path, scope)
-#         if response.status_code == 404:
-#             response = await super().get_response('.', scope)
-#         return response
-
-# app.mount('/', SPAStaticFiles(directory='app/documentation', html=True), name='frontend')
 
 @app.get("/",response_class=HTMLResponse)
 def index(request:Request):
