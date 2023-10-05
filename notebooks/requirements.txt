@@ -14,16 +14,17 @@ python-jose[cryptography]
 passlib[bcrypt]
 aiofiles
 logzio-python-handler
-GeoAlchemy2==0.10.2
+GeoAlchemy2
 jinja2
 fastapi-restful[tasks]
 pandas
 protobuf==3.19.6
 google
+geos=3.7.1
 shapely
 polyline
-redis_om
-fastapi-redis-cache
-fastapi-cache2[redis]
+# redis_om
+# fastapi-redis-cache
+# fastapi-cache2[redis]
 aioredis
 versiontag

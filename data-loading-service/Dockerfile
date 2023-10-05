@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.3
-FROM python:3.6
+FROM python:3.11
 
 # 
 # WORKDIR /code
@@ -11,6 +11,10 @@ COPY ./requirements.txt requirements.txt
 # RUN --mount=type=secret,id=ftp_server ./use-secret.sh
 # RUN --mount=type=secret,id=ftp_server ./use_secret.sh
 # RUN pip install --upgrade cython
+
+RUN apt-get update && apt-get install -y \
+    libgeos-dev
+
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # 
 
