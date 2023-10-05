@@ -34,6 +34,7 @@ class CalendarDates(Base):
     date = Column(String)
     exception_type = Column(Integer)
     agency_id = Column(String)
+
 class StopTimes(Base):
     __tablename__ = "stop_times"
     arrival_time = Column(String)
@@ -50,6 +51,7 @@ class StopTimes(Base):
     bay_num = Column(Integer)
     agency_id = Column(String)
     trip_id = Column(Integer, primary_key=True,index=True)
+    rider_usage_code = Column(Integer)
 
 class Stops(Base):
     __tablename__ = "stops"
