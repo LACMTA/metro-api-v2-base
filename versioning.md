@@ -2,13 +2,20 @@
 
 ## When to update
 In general, we keep the version number in sync with the API version number and use [Semantic Versioning](https://semver.org/).
+
 ## How to update
 
-Run the following command from the root directory of the project:
+## Command Summary
 
-```shell
-git tag -a v2.1.10 -m "MVP Release"
+``` shell
+git tag
+git tag -a NEW_VERSION_TAG -m "VERSION_NAME"
+git push --tags
+git push --delete origin PREVIOUS_VERSION_TAG
 ```
+
+> **Note**: The version tag will not be reflected on the API frontend until the image is rebuilt and served on AWS, because that is when it pulls in the tag data from GitHub.
+
 
 ### Checking the version
 
@@ -16,11 +23,34 @@ git tag -a v2.1.10 -m "MVP Release"
 git tag
 ```
 
+This should output something similar to:
+
+> v2.1.27
+
+### Updating the tag
+
+Run the following command from the root directory of the project:
+
+```shell
+git tag -a v2.1.28 -m "MVP Release"
+```
+
+
 ### Pushing the version
 
 ```shell
 git push --tags
 ```
+
+### Removing the old tag
+
+Since we only need one version tag, we need will remove the old tag by using:
+
+```shell
+git push --delete origin v2.1.27
+```
+
+
 
 ## Other notes
 
