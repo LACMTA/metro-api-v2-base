@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 
 from datetime import timedelta, date, datetime
 
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Query
 # from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse,PlainTextResponse
@@ -48,6 +48,10 @@ from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
 # from app.models import *
 # from app.security import *
 
+# Pagination
+from fastapi_pagination import Page, add_pagination, paginate
+from fastapi_pagination.ext.sqlalchemy import paginate as paginate_sqlalchemy
+from fastapi_pagination.links import Page
 
 from .utils.log_helper import *
 from . import crud, models, security, schemas
@@ -59,6 +63,19 @@ from logzio.handler import LogzioHandler
 import logging
 import typing as t
 
+
+### Pagination Parameter Options (deafult pagination count, default starting page, max_limit)
+Page = Page.with_custom_options(
+    size=Query(100, ge=1, le=500),
+)
+
+app = FastAPI()
+
+@app.exception_handler(Exception)
+async def validation_exception_handler(request, err):
+    base_error_message = f"Failed to execute: {request.method}: {request.url}"
+    # Change here to LOGGER
+    return JSONResponse(status_code=400, content={"message": f"{base_error_message}. Detail: {err}"})
 
 class EndpointFilter(logging.Filter):
     def __init__(
@@ -134,6 +151,7 @@ app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
 # app.mount("/", StaticFiles(directory="app/documentation", html=True))
 templates = Jinja2Templates(directory="app/frontend")
 app.mount("/", StaticFiles(directory="app/frontend"))
+
 
 # code from https://fastapi-restful.netlify.app/user-guide/repeated-tasks/
 
@@ -350,12 +368,13 @@ async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
     calendar_dates = jsonable_encoder(result)
     return JSONResponse(content={"calendar_dates":calendar_dates})
 
-@app.get("/{agency_id}/stop_times/route_code/{route_code}",tags=["Static data"])
+@app.get("/{agency_id}/stop_times/route_code/{route_code}",tags=["Static data"],response_model=Page[schemas.StopTimes])
 async def get_stop_times_by_route_code_and_agency(agency_id: AgencyIdEnum,route_code, db: Session = Depends(get_db)):
     result = crud.get_stop_times_by_route_code(db,route_code,agency_id.value)
     return result
 
-@app.get("/{agency_id}/stop_times/trip_id/{trip_id}",tags=["Static data"])
+
+@app.get("/{agency_id}/stop_times/trip_id/{trip_id}",tags=["Static data"],response_model=Page[schemas.StopTimes])
 async def get_stop_times_by_trip_id_and_agency(agency_id: AgencyIdEnum,trip_id, db: Session = Depends(get_db)):
     result = crud.get_stop_times_by_trip_id(db,trip_id,agency_id.value)
     return result
@@ -554,7 +573,7 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
-
+add_pagination(app)
 # @app.on_event("startup")
 # async def startup_redis():
     # redis =  aioredis.from_url("redis://localhost", encoding="utf8", decode_responses=True,port=6379)
