@@ -53,7 +53,6 @@ class StopTimes(BaseModel):
     destination_code: str
     timepoint: int
     bay_num: int
-    id: int
     agency_id: str
     rider_usage_code: int
 

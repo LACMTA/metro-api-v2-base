@@ -23,10 +23,11 @@ shapely
 pandas
 polyline
 websockets
-fastapi-cache2[redis]
-aioredis
+# fastapi-cache2[redis]
+# aioredis
 asyncio
 asyncpg
 sqlalchemy[asyncio]
 versiontag
 gitpython
+fastapi-pagination

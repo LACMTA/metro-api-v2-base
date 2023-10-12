@@ -14,6 +14,7 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from sqlalchemy.orm import aliased
 from sqlalchemy import and_
+from fastapi_pagination.ext.sqlalchemy import paginate as paginate_sqlalchemy
 from geoalchemy2 import functions,shape
 from shapely.geometry import Point
 from shapely import geometry as geo
@@ -39,10 +40,10 @@ def get_stop_times_by_route_code(db, route_code: str,agency_id: str):
             result.append(row.route_code)
         return result
     elif route_code == 'all':
-        the_query = db.query(models.StopTimes).filter(models.StopTimes.agency_id == agency_id).all()
+        the_query = paginate_sqlalchemy(db, select(models.StopTimes).filter(models.StopTimes.agency_id == agency_id))
         return the_query
     else:
-        the_query = db.query(models.StopTimes).filter(models.StopTimes.route_code == route_code,models.StopTimes.agency_id == agency_id).all()
+        the_query = paginate_sqlalchemy(db, select(models.StopTimes).filter(models.StopTimes.route_code == route_code,models.StopTimes.agency_id == agency_id))
     return the_query
 
 def get_stop_times_by_trip_id(db, trip_id: str,agency_id: str):
@@ -53,10 +54,10 @@ def get_stop_times_by_trip_id(db, trip_id: str,agency_id: str):
             result.append(row.trip_id)
         return result
     elif trip_id == 'all':
-        the_query = db.query(models.StopTimes).filter(models.StopTimes.agency_id == agency_id).all()
+        the_query = paginate_sqlalchemy(db, select(models.StopTimes).filter(models.StopTimes.agency_id == agency_id))
         return the_query
     else:
-        the_query = db.query(models.StopTimes).filter(models.StopTimes.trip_id == trip_id,models.StopTimes.agency_id == agency_id).all()
+        the_query = paginate_sqlalchemy(db, select(models.StopTimes).filter(models.StopTimes.trip_id == trip_id,models.StopTimes.agency_id == agency_id))
     return the_query
 
 # def get_stop_times_by_trip_id_old(db, trip_id: str,agency_id: str):
