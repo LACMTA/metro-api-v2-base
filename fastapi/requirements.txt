@@ -24,11 +24,12 @@ shapely
 polyline
 websockets
 redis_om
-fastapi-redis-cache
-fastapi-cache2[redis]
+# fastapi-redis-cache
+# fastapi-cache2[redis]
 aioredis
 asyncio
 asyncpg
 sqlalchemy[asyncio]
 versiontag
 gitpython
+fastapi-pagination

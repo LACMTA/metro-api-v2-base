@@ -45,7 +45,7 @@ class StopTimes(Base):
     pickup_type = Column(Integer)
     drop_off_type = Column(Integer)
     trip_id_event = Column(String,index=True)
-    route_code = Column(Integer)
+    route_code = Column(Integer,index=True)
     destination_code = Column(String,index=True)
     timepoint = Column(Integer)
     bay_num = Column(Integer)

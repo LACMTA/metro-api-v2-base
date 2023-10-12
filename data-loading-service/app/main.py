@@ -36,7 +36,7 @@ def calendar_dates_update_scheduler():
     try:
         gtfs_static_helper.update_calendar_dates()
     except Exception as e:
-        print('Error updatin calendar dates: ' + str(e))
+        print('Error updating calendar dates: ' + str(e))
         
 def initial_load():
     gopass_helper.update_go_pass_data()
