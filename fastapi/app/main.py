@@ -64,7 +64,7 @@ import logging
 import typing as t
 
 
-### Pagination Parameter Options (max_limit, etc.)
+### Pagination Parameter Options (deafult pagination count, default starting page, max_limit)
 Page = Page.with_custom_options(
     size=Query(100, ge=1, le=500),
 )
