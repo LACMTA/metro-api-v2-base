@@ -8,7 +8,7 @@
 
 # Source Partly from: https://aws.amazon.com/getting-started/guides/deploy-webapp-lightsail/module-four/
 
-name: Deploy Docker Image to Prod AWS Lightsail Container Service
+name: Deploy Docker Image to AWS Lightsail Container Service
 
 on:
   push:
@@ -76,13 +76,12 @@ jobs:
           context: ./fastapi/
           build-args: | 
             BUILDKIT_CONTEXT_KEEP_GIT_DIR=true
-      - name: Push Updated Docker Image on Lightsail Prod
+      - name: Push Updated Docker Image on Lightsail
         if: steps.changed-files.outputs.any_changed == 'true'
         run: >
           aws lightsail create-container-service-deployment 
           --service-name metro-api-v2 
-          --containers '{"fastapi":{"image":"lacmta/metro-api-v2:fastapi","ports":{"80":"HTTP"},"environment":{"FTP_PASS":"${{secrets.FTP_PASS }}","FTP_SERVER":"${{secrets.FTP_SERVER }}","FTP_USERNAME":"${{secrets.FTP_USERNAME }}","SWIFTLY_AUTH_KEY_BUS":"${{secrets.SWIFTLY_AUTH_KEY_BUS}}","SWIFTLY_AUTH_KEY_RAIL":"${{secrets.SWIFTLY_AUTH_KEY_RAIL}}","API_DB_URI":"${{secrets.API_DB_URI}}","HASH_KEY":"${{secrets.HASH_KEY}}","HASHING_ALGORITHM":"${{secrets.HASHING_ALGORITHM}}","LOGZIO_TOKEN":"${{secrets.LOGZIO_TOKEN}}","LOGZIO_URL":"https://listener.logz.io:8071","RUNNING_ENV":"prod","MAIL_USERNAME":"${{secrets.MAIL_USERNAME}}","MAIL_PASSWORD":"${{secrets.MAIL_PASSWORD}}","MAIL_SERVER":"${{secrets.MAIL_SERVER}}"}},"data-loading-service":{"image":"lacmta/metro-api-v2:data-loading-service","environment":{"FTP_PASS":"${{secrets.FTP_PASS }}","FTP_SERVER":"${{secrets.FTP_SERVER }}","FTP_USERNAME":"${{secrets.FTP_USERNAME }}","SWIFTLY_AUTH_KEY_BUS":"${{secrets.SWIFTLY_AUTH_KEY_BUS}}","SWIFTLY_AUTH_KEY_RAIL":"${{secrets.SWIFTLY_AUTH_KEY_RAIL}}","API_DB_URI":"${{secrets.API_DB_URI}}","HASH_KEY":"${{secrets.HASH_KEY}}","HASHING_ALGORITHM":"${{secrets.HASHING_ALGORITHM}}","LOGZIO_TOKEN":"${{secrets.LOGZIO_TOKEN}}","LOGZIO_URL":"https://listener.logz.io:8071","RUNNING_ENV":"prod","MAIL_USERNAME":"${{secrets.MAIL_USERNAME}}","MAIL_PASSWORD":"${{secrets.MAIL_PASSWORD}}","MAIL_SERVER":"${{secrets.MAIL_SERVER}}"}}}' --public-endpoint '{"containerName": "fastapi","containerPort": 80,"healthCheck":{ "healthyThreshold": 2,"unhealthyThreshold": 2,"timeoutSeconds": 2,"intervalSeconds": 5,"path": "/","successCodes": "200-499"}}'
-
+          --containers '{"redis": {"image": "redis:latest", "environment": {}, "ports": {"6379": "HTTP"}}, "prometheus": {"image": "prom/prometheus:latest", "environment": {}, "ports": {"9090": "HTTP"}}, "grafana": {"image": "grafana/grafana:latest", "environment": {}, "ports": {"3000": "HTTP"}}, "data-loading-service": {"image":"lacmta/metro-api-v2:data-loading-service", "environment": {"FTP_SERVER": "${{secrets.FTP_SERVER}}", "FTP_USERNAME": "${{secrets.FTP_USERNAME}}", "FTP_PASS": "${{secrets.FTP_PASS}}", "SWIFTLY_AUTH_KEY_BUS": "${{secrets.SWIFTLY_AUTH_KEY_BUS}}", "SWIFTLY_AUTH_KEY_RAIL": "${{secrets.SWIFTLY_AUTH_KEY_RAIL}}", "AWS_ACCESS_KEY_ID": "${{secrets.AWS_ACCESS_KEY_ID}}", "ACCESS_SECRET_KEY": "${{secrets.ACCESS_SECRET_KEY}}", "SWIFTLY_AUTH_KEY": "${{secrets.SWIFTLY_AUTH_KEY}}", "API_DB_URI": "${{secrets.API_DB_URI}}", "HASH_KEY": "${{secrets.HASH_KEY}}", "HASHING_ALGORITHM": "${{secrets.HASHING_ALGORITHM}}", "LOGZIO_TOKEN": "${{secrets.LOGZIO_TOKEN}}", "LOGZIO_URL": "${{secrets.LOGZIO_URL}}", "RUNNING_ENV": "prod"}}, "fastapi": {"image":"lacmta/metro-api-v2:fastapi", "environment": {"FTP_SERVER": "${{secrets.FTP_SERVER}}", "FTP_USERNAME": "${{secrets.FTP_USERNAME}}", "FTP_PASS": "${{secrets.FTP_PASS}}", "SWIFTLY_AUTH_KEY_BUS": "${{secrets.SWIFTLY_AUTH_KEY_BUS}}", "SWIFTLY_AUTH_KEY_RAIL": "${{secrets.SWIFTLY_AUTH_KEY_RAIL}}", "AWS_ACCESS_KEY_ID": "${{secrets.AWS_ACCESS_KEY_ID}}", "ACCESS_SECRET_KEY": "${{secrets.ACCESS_SECRET_KEY}}", "SWIFTLY_AUTH_KEY": "${{secrets.SWIFTLY_AUTH_KEY}}", "API_DB_URI": "${{secrets.API_DB_URI}}", "HASH_KEY": "${{secrets.HASH_KEY}}", "HASHING_ALGORITHM": "${{secrets.HASHING_ALGORITHM}}", "LOGZIO_TOKEN": "${{secrets.LOGZIO_TOKEN}}", "LOGZIO_URL": "https://listener.logz.io:8071", "RUNNING_ENV": "prod"}, "ports": {"80": "HTTP"}}}' --public-endpoint '{"containerName": "fastapi","containerPort": 80,"healthCheck":{ "healthyThreshold": 2,"unhealthyThreshold": 2,"timeoutSeconds": 2,"intervalSeconds": 5,"path": "/","successCodes": "200-499"}}'
   deploy-documentation:
     runs-on: ubuntu-latest
     name: Deploy Documentation to GitHub Pages
