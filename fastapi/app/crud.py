@@ -19,7 +19,7 @@ from geoalchemy2 import functions,shape
 from shapely.geometry import Point
 from shapely import geometry as geo
 # from shapely import to_geojson
-from app import gtfs_models
+# from app import gtfs_models
 
 from . import models, schemas,gtfs_models
 from .config import Config
@@ -30,6 +30,20 @@ from .utils.db_helper import *
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+import aioredis
+
+from sqlalchemy.orm import Session
+from sqlalchemy import distinct
+
+redis = aioredis.from_url("redis://localhost:6379", decode_responses=True, encoding='utf-8', socket_connect_timeout=5)
+
+def get_all_data(db: Session, model, agency_id):
+    print(db.query(model).filter(model.agency_id == agency_id).all())
+    return db.query(model).filter(model.agency_id == agency_id).all()
+
+def get_unique_keys(db: Session, model, key_column, agency_id):
+    return db.query(distinct(model.__dict__[key_column])).filter(model.agency_id == agency_id).all()
 
 # stop_times utils
 def get_stop_times_by_route_code(db, route_code: str,agency_id: str):
@@ -352,6 +366,25 @@ async def get_gtfs_rt_line_detail_updates_for_route_code(session,route_code: str
         else:
             yield result
 
+async def get_gtfs_rt_vehicle_positions_trip_data_redis(db, vehicle_id: str):
+    # Create a unique key for this vehicle_id
+    key = f'vehicle:{vehicle_id}'
+    
+    # Try to get data from Redis
+    data = await redis.get(key)
+    
+    if data is None:
+        # If data is not in Redis, get it from the database
+        result = db.query(gtfs_models.VehiclePosition).filter(gtfs_models.VehiclePosition.vehicle_id == vehicle_id).all()
+        
+        if not result:
+            return None
+        
+        # Convert the result to JSON and store it in Redis
+        data = json.dumps([dict(row) for row in result])
+        await redis.set(key, data)
+    
+    return data
 
 def get_gtfs_rt_vehicle_positions_trip_data(db,vehicle_id: str,geojson:bool,agency_id: str):
     result = []
