@@ -3,12 +3,15 @@ from distutils.command.config import config
 from typing import Annotated
 from versiontag import get_version
 
+from prometheus_fastapi_instrumentator import Instrumentator
+
 import http
 import json
 import requests
 import csv
 import os
 import asyncio
+import aioredis
 
 import pytz
 
@@ -22,6 +25,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse,PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+
 
 from sqlalchemy import false
 from sqlalchemy.orm import aliased
@@ -54,7 +58,7 @@ from fastapi_pagination.ext.sqlalchemy import paginate as paginate_sqlalchemy
 from fastapi_pagination.links import Page
 
 from .utils.log_helper import *
-from . import crud, models, security, schemas
+from . import crud, models, security, schemas, gtfs_models
 from .database import Session, engine, session, get_db,get_async_db
 from .config import Config
 from pathlib import Path
@@ -63,19 +67,43 @@ from logzio.handler import LogzioHandler
 import logging
 import typing as t
 
+from geoalchemy2.elements import WKBElement
+from geoalchemy2.shape import to_shape
+
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Histogram
 
 ### Pagination Parameter Options (deafult pagination count, default starting page, max_limit)
 Page = Page.with_custom_options(
     size=Query(100, ge=1, le=500),
 )
 
-app = FastAPI()
+# Create a Redis connection pool
+redis = aioredis.from_url("redis://localhost:6379", decode_responses=True, encoding='utf-8', socket_connect_timeout=5)
 
-@app.exception_handler(Exception)
-async def validation_exception_handler(request, err):
-    base_error_message = f"Failed to execute: {request.method}: {request.url}"
-    # Change here to LOGGER
-    return JSONResponse(status_code=400, content={"message": f"{base_error_message}. Detail: {err}"})
+import sqlalchemy
+
+def asdict(obj):
+    result = {}
+    for c in sqlalchemy.inspect(obj).mapper.column_attrs:
+        value = getattr(obj, c.key)
+        if isinstance(value, WKBElement):
+            # Convert WKBElement to WKT format
+            value = str(to_shape(value))
+        result[c.key] = str(value)
+    return result
+
+async def get_data(db: Session, key: str, fetch_func):
+    # Get data from Redis
+    data = await redis.get(key)
+    if data is None:
+        # If data is not in Redis, get it from the database
+        data = fetch_func(db, key)
+        if data is None:
+            return None
+        # Set data in Redis
+        await redis.set(key, data)
+    return data
+
 
 class EndpointFilter(logging.Filter):
     def __init__(
@@ -135,6 +163,10 @@ class DayTypesEnum(str, Enum):
     no_type = "no_type"
     all = "all"
 
+class FormatEnum(str, Enum):
+    json = "json"
+    geojson = "geojson"
+
 tags_metadata = [
     {"name": "Real-Time data", "description": "Includes GTFS-RT data for Metro Rail and Metro Bus."},
     {"name": "Static data", "description": "GTFS Static data, including routes, stops, and schedules."},
@@ -147,11 +179,39 @@ models.Base.metadata.create_all(bind=engine)
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
 # db = connect(host='', port=0, timeout=None, source_address=None)
 
+instrumentator = Instrumentator().instrument(app)
+Instrumentator().instrument(app, metric_namespace='metro-api', metric_subsystem='metro-api').expose(app)
+
+# Create a metric to track time spent and requests made.
+REQUEST_TIME = Histogram('request_processing_seconds', 'Time spent processing request')
+
+
+@app.exception_handler(Exception)
+async def validation_exception_handler(request, err):
+    base_error_message = f"Failed to execute: {request.method}: {request.url}"
+    # Change here to LOGGER
+    return JSONResponse(status_code=400, content={"message": f"{base_error_message}. Detail: {err}"})
+
 # templates = Jinja2Templates(directory="app/documentation")
 # app.mount("/", StaticFiles(directory="app/documentation", html=True))
 templates = Jinja2Templates(directory="app/frontend")
 app.mount("/", StaticFiles(directory="app/frontend"))
 
+
+###### Utility functions ######
+from geojson import Point, Feature, FeatureCollection
+
+def to_geojson(data):
+    features = []
+    for item in data:
+        # Parse the 'geometry' string into a Point object
+        geometry = item['geometry'].replace('POINT (', '').replace(')', '').split()
+        point = Point((float(geometry[0]), float(geometry[1])))
+        # Exclude the 'geometry' key from the properties
+        properties = {key: item[key] for key in item if key != 'geometry'}
+        feature = Feature(geometry=point, properties=properties)
+        features.append(feature)
+    return FeatureCollection(features)
 
 # code from https://fastapi-restful.netlify.app/user-guide/repeated-tasks/
 
@@ -268,27 +328,30 @@ async def vehicle_position_updates(agency_id: AgencyIdEnum, field_name: VehicleP
                 return result
             return result
 
-@app.get("/{agency_id}/trip_detail/{vehicle_id}",tags=["Real-Time data"])
-async def get_trip_detail(agency_id: AgencyIdEnum, vehicle_id: str, geojson:bool=False,db: Session = Depends(get_db)):
-    if vehicle_id == 'all':
-        result = crud.get_all_gtfs_rt_vehicle_positions_trip_data(db,agency_id.value,geojson)
-        return result
-    multiple_values = vehicle_id.split(',')
-    if len(multiple_values) > 1:
-        result_array = []
-        for value in multiple_values:
-            temp_result = crud.get_gtfs_rt_vehicle_positions_trip_data(db,value,geojson,agency_id.value)
-            if len(temp_result) == 0:
-                temp_result = { "message": "field_value '" + value + "' not found in field_name '" + value + "'" }
-            result_array.append(temp_result)
-        return result_array
-    else:
-        result = crud.get_gtfs_rt_vehicle_positions_trip_data(db,vehicle_id,geojson,agency_id.value)
-    # crud.get_gtfs_rt_vehicle_positions_by_field_name(db,vehicle_id,geojson,agency_id.value)
-    return result
-
-
-
+@app.get("/{agency_id}/trip_detail", tags=["Real-Time data"])
+async def get_trip_detail(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, operation: str = None, format: FormatEnum = Query(FormatEnum.json), db: Session = Depends(get_db)):
+    with REQUEST_TIME.time():
+        # Your code here
+        if vehicle_id is None:        
+            if operation == 'all':
+                # Get all data
+                data = crud.get_all_data(db,model=gtfs_models.VehiclePosition,agency_id=agency_id.value)
+                data = [asdict(d) for d in data]
+            elif operation == 'list':
+                # Get list of unique keys
+                data = crud.get_unique_keys(db,model=gtfs_models.VehiclePosition,agency_id=agency_id.value)
+                data = [asdict(d) for d in data]
+        else:
+            # Get specific vehicle data
+            data = get_data(db, vehicle_id, crud.get_gtfs_rt_vehicle_positions_trip_data_redis)
+            if data is not None:
+                data = asdict(data)
+        if data is None:
+            raise HTTPException(status_code=404, detail="Data not found")
+        if format == FormatEnum.geojson:
+            # Convert data to GeoJSON format
+            data = to_geojson(data)
+        return data
 
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
 async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
@@ -320,6 +383,10 @@ async def get_canceled_trip_summary(db: Session = Depends(get_db)):
         return {"canceled_trips_summary":canceled_trips_summary,
                 "total_canceled_trips":total_canceled_trips,
                 "last_updated":update_time}
+
+@app.get("/metrics")
+async def metrics():
+    return generate_latest()
 
 @app.get("/{agency_id}/trip_detail_route_code/{route_code}",tags=["Real-Time data"])
 async def get_trip_detail_and_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
@@ -543,7 +610,6 @@ async def startup_event():
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_error_logger = logging.getLogger("uvicorn.error")
     logger = logging.getLogger("uvicorn.app")
-    
     logzio_formatter = logging.Formatter("%(message)s")
     logzio_uvicorn_access_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.access', 5, Config.LOGZIO_URL)
     logzio_uvicorn_access_handler.setLevel(logging.INFO)

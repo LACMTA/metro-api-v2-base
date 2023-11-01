@@ -9,7 +9,7 @@ python-dotenv
 pytz
 python-multipart
 SQLAlchemy
-psycopg2
+psycopg2-binary
 python-jose[cryptography]
 passlib[bcrypt]
 aiofiles
@@ -33,3 +33,6 @@ sqlalchemy[asyncio]
 versiontag
 gitpython
 fastapi-pagination
+prometheus-fastapi-instrumentator
+prometheus_client
+geojson

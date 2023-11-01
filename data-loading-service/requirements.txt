@@ -6,7 +6,7 @@ requests
 python-dotenv
 # pytz
 # python-multipart
-psycopg2
+psycopg2-binary
 schedule
 geopandas
 GeoAlchemy2

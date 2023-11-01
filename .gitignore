@@ -16,3 +16,4 @@ notebooks/**.csv
 notebooks/**.zip
 notebooks/input
 "version.txt" 
+aws-lightsail-container.json
