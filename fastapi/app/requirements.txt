@@ -34,3 +34,5 @@ fastapi-pagination
 prometheus-fastapi-instrumentator
 geojson
 prometheus_client
+pytest
+asyncpg

@@ -1,8 +1,24 @@
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON
 from geoalchemy2 import *
+from geoalchemy2.shape import to_shape
+from geoalchemy2.elements import WKBElement
+from shapely.geometry import mapping
+
+from .gtfs_models import *
 
 from .database import Base
 
+class BaseModel(Base):
+    __abstract__ = True
+
+    def to_dict(self):
+        return {c.key: self.handle_type(c) for c in self.__table__.columns}
+
+    def handle_type(self, column):
+        data = getattr(self, column.key)
+        if isinstance(data, WKBElement):
+            return mapping(to_shape(data))
+        return data
 
 class Agency(Base):
     __tablename__ = "agency"
@@ -213,3 +229,94 @@ class User(Base):
     hashed_password = Column(String)
     is_email_verified = Column(Boolean, default=False)
     is_active = Column(Boolean, default=False)
+
+
+### GTFS-RT models
+
+# classes for the GTFS-realtime data
+# TripUpdate
+# StopTimeUpdate
+# VehiclePosition
+
+class TripUpdate(BaseModel):
+    __tablename__ = 'trip_updates'
+    # This replaces the TripDescriptor message
+    # TODO: figure out the relations
+    trip_id = Column(String(64),primary_key=True,index=True)
+    route_id = Column(String(64))
+    start_time = Column(String(8))
+    start_date = Column(String(10))
+    # Put in the string value not the enum
+    # TODO: add a domain
+    schedule_relationship = Column(String(9))
+    direction_id = Column(Integer)
+
+    agency_id = Column(String)
+    # moved from the header, and reformatted as datetime
+    timestamp = Column(Integer)
+    stop_time_json = Column(String)
+    stop_time_updates = relationship('StopTimeUpdate', backref=backref('trip_updates',lazy="joined"))
+    class Config:
+        schema_extra = {
+            "definition": {
+                "comment": 
+                """
+                # Metro's bus agency id is "LACMTA"
+                # Metro's rail agency id is "LACMTA METRO
+                """
+            }
+        }
+
+class StopTimeUpdate(BaseModel):
+    __tablename__ = 'stop_time_updates'
+    # oid = Column(Integer, )
+
+    # TODO: Fill one from the other
+    stop_sequence = Column(Integer)
+    stop_id = Column(String(10),primary_key=True,index=True)
+    trip_id = Column(String, ForeignKey('trip_updates.trip_id'))
+    arrival = Column(Integer)
+    departure = Column(Integer)
+    agency_id = Column(String)
+    route_code = Column(String)
+    start_time = Column(String)
+    start_date = Column(String)
+    direction_id = Column(Integer)
+
+    # TODO: Add domain
+    schedule_relationship = Column(Integer)
+    
+    # Link it to the TripUpdate
+    # trip_id = Column(Integer,)
+
+class VehiclePosition(BaseModel):
+    __tablename__ = "vehicle_position_updates"
+
+    # Vehicle information
+    current_stop_sequence = Column(Integer)
+    current_status = Column(String)
+    timestamp = Column(Integer)
+    stop_id = Column(String)
+
+    # Collapsed Vehicle.trip
+    trip_id = Column(String)
+    trip_start_date = Column(String)
+    trip_route_id = Column(String)
+    # trip_direction_id = Column(Integer)
+    route_code = Column(String)
+    
+    # Collapsed Vehicle.Position
+    position_latitude = Column(Float)
+    position_longitude = Column(Float)
+    position_bearing = Column(Float)
+    position_speed = Column(Float)
+    geometry = Column(Geometry('POINT', srid=4326))
+
+    # collapsed Vehicle.Vehicle
+    vehicle_id = Column(String,primary_key=True,index=True)
+    vehicle_label = Column(String)
+
+    agency_id = Column(String)
+    timestamp = Column(Integer)
+# So one can loop over all classes to clear them for a new load (-o option)
+AllClasses = (TripUpdate, StopTimeUpdate, VehiclePosition)

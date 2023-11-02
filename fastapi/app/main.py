@@ -27,8 +27,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 
-from sqlalchemy import false
+from sqlalchemy import false, distinct
 from sqlalchemy.orm import aliased
+
+from sqlalchemy.future import select
+
 
 from pydantic import BaseModel, Json, ValidationError
 import functools
@@ -58,17 +61,15 @@ from fastapi_pagination.ext.sqlalchemy import paginate as paginate_sqlalchemy
 from fastapi_pagination.links import Page
 
 from .utils.log_helper import *
-from . import crud, models, security, schemas, gtfs_models
-from .database import Session, engine, session, get_db,get_async_db
+
+from .database import Session, AsyncSession, engine, session, get_db,get_async_db
+from . import crud, models, security, schemas
 from .config import Config
 from pathlib import Path
 
 from logzio.handler import LogzioHandler
 import logging
 import typing as t
-
-from geoalchemy2.elements import WKBElement
-from geoalchemy2.shape import to_shape
 
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Histogram
 
@@ -79,18 +80,6 @@ Page = Page.with_custom_options(
 
 # Create a Redis connection pool
 redis = aioredis.from_url("redis://localhost:6379", decode_responses=True, encoding='utf-8', socket_connect_timeout=5)
-
-import sqlalchemy
-
-def asdict(obj):
-    result = {}
-    for c in sqlalchemy.inspect(obj).mapper.column_attrs:
-        value = getattr(obj, c.key)
-        if isinstance(value, WKBElement):
-            # Convert WKBElement to WKT format
-            value = str(to_shape(value))
-        result[c.key] = str(value)
-    return result
 
 async def get_data(db: Session, key: str, fetch_func):
     # Get data from Redis
@@ -166,6 +155,10 @@ class DayTypesEnum(str, Enum):
 class FormatEnum(str, Enum):
     json = "json"
     geojson = "geojson"
+
+class OperationEnum(str, Enum):
+    all = 'all'
+    list = 'list'
 
 tags_metadata = [
     {"name": "Real-Time data", "description": "Includes GTFS-RT data for Metro Rail and Metro Bus."},
@@ -293,9 +286,47 @@ async def get_gtfs_rt_trip_updates_by_field_name(agency_id: AgencyIdEnum, field_
                 return result
             return result
 
-@app.get("/{agency_id}/vehicle_positions/all",tags=["Real-Time data"])
-async def all_vehicle_position_updates(agency_id: AgencyIdEnum, db: Session = Depends(get_db),geojson: bool = False):
-    result = crud.get_all_gtfs_rt_vehicle_positions(db,agency_id.value,geojson)
+@app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])
+async def get_trip_updates(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, operation: Optional[OperationEnum] = None, format: FormatEnum = Query(FormatEnum.json), db: AsyncSession = Depends(get_async_db)):
+    if vehicle_id is None:        
+        if operation == OperationEnum.all:
+            # Get all data
+            stmt = select(models.TripUpdates).where(models.TripUpdates.agency_id == agency_id.value)
+            result = await db.execute(stmt)
+            data = result.scalars().all()
+        elif operation == OperationEnum.list:
+            # Get list of unique keys
+            stmt = select(distinct(models.TripUpdates.vehicle_id)).where(models.TripUpdates.agency_id == agency_id.value)
+            result = await db.execute(stmt)
+            data = result.scalars().all()
+    else:
+        # Get specific vehicle data
+        stmt = select(models.TripUpdates).where(models.TripUpdates.vehicle_id == vehicle_id, models.TripUpdates.agency_id == agency_id.value)
+        result = await db.execute(stmt)
+        data = result.scalar_one_or_none()
+        if data is not None:
+            data = data.__dict__
+    if data is None:
+        raise HTTPException(status_code=404, detail="Data not found")
+    if format == FormatEnum.geojson:
+        # Convert data to GeoJSON format
+        data = to_geojson(data)
+    return data
+
+
+@app.get("/{agency_id}/vehicle_positions/all", tags=["Real-Time data"])
+async def all_vehicle_position_updates(agency_id: AgencyIdEnum, async_db: AsyncSession = Depends(get_async_db), geojson: bool = False):
+    # Use the generic function here
+    result = await crud.get_data_async(async_db, models.VehiclePosition, 'agency_id', agency_id.value)
+
+    # If geojson is True, convert the result to GeoJSON format
+    if geojson:
+        result = {
+            'metadata': {'count': len(result), 'title': 'Vehicle Positions'},
+            'type': "FeatureCollection",
+            'features': result
+        }
+
     return result
 # @app.get("/{agency_id}/vehicle_positions_no_cache/all",tags=["Real-Time data"])
 # async def all_vehicle_position_updates(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
@@ -327,31 +358,34 @@ async def vehicle_position_updates(agency_id: AgencyIdEnum, field_name: VehicleP
                 result = { "message": "field_value '" + field_value + "' not found in field_name '" + field_name.value + "'" }
                 return result
             return result
-
-@app.get("/{agency_id}/trip_detail", tags=["Real-Time data"])
-async def get_trip_detail(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, operation: str = None, format: FormatEnum = Query(FormatEnum.json), db: Session = Depends(get_db)):
-    with REQUEST_TIME.time():
-        # Your code here
-        if vehicle_id is None:        
-            if operation == 'all':
-                # Get all data
-                data = crud.get_all_data(db,model=gtfs_models.VehiclePosition,agency_id=agency_id.value)
-                data = [asdict(d) for d in data]
-            elif operation == 'list':
-                # Get list of unique keys
-                data = crud.get_unique_keys(db,model=gtfs_models.VehiclePosition,agency_id=agency_id.value)
-                data = [asdict(d) for d in data]
+        
+@app.get("/{agency_id}/vehicle_positions", tags=["Real-Time data"])        
+async def get_vehicle_positions(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, operation: Optional[OperationEnum] = None, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
+    model = models.VehiclePosition if operation == OperationEnum.all else models.VehiclePosition
+    cache_key = f"{agency_id.value}:{vehicle_id if vehicle_id else 'all'}"
+    cached_data = await app.state.redis.get(cache_key)
+    if cached_data is not None:
+        return json.loads(cached_data)
+    data = None  # Initialize data to None
+    if vehicle_id is not None:
+        result = await crud.get_data_async(async_db, model, agency_id.value, 'vehicle_id', vehicle_id)
+        if result is None:
+            data = ['Vehicle ID: ' + vehicle_id + ' not found']
         else:
-            # Get specific vehicle data
-            data = get_data(db, vehicle_id, crud.get_gtfs_rt_vehicle_positions_trip_data_redis)
-            if data is not None:
-                data = asdict(data)
-        if data is None:
-            raise HTTPException(status_code=404, detail="Data not found")
-        if format == FormatEnum.geojson:
-            # Convert data to GeoJSON format
-            data = to_geojson(data)
-        return data
+            data = result.fetchall()
+    else:        
+        if operation == OperationEnum.all:
+            data = await crud.get_all_data_async(async_db, model, agency_id.value)
+        # elif operation == OperationEnum.list:
+        #     result = await crud.get_list_data_async(model, agency_id.value)
+        #     data = result.fetchall()
+    if data is None:
+        raise HTTPException(status_code=404, detail="Data not found")
+    if format == FormatEnum.geojson:
+        # Convert data to GeoJSON format
+        data = to_geojson(data)
+    await app.state.redis.set(cache_key, json.dumps(data))
+    return data
 
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
 async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
@@ -387,6 +421,25 @@ async def get_canceled_trip_summary(db: Session = Depends(get_db)):
 @app.get("/metrics")
 async def metrics():
     return generate_latest()
+
+
+@app.get("/{operation_id}/trip_detail/{vehicle_id}", tags=["Real-Time data"])
+async def get_trip_detail(operation_id: OperationEnum, vehicle_id: str, geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
+    if operation_id == OperationEnum.ALL:
+        result = await crud.get_all_data_async(async_db, models.VehiclePosition, operation_id.value)
+        return result
+    multiple_values = vehicle_id.split(',')
+    if len(multiple_values) > 1:
+        result_array = []
+        for value in multiple_values:
+            temp_result = await crud.get_data_async(async_db, models.VehiclePosition, 'vehicle_id', value)
+            if len(temp_result) == 0:
+                temp_result = { "message": "field_value '" + value + "' not found in field_name '" + value + "'" }
+            result_array.append(temp_result)
+        return result_array
+    else:
+        result = await crud.get_data_async(async_db, models.VehiclePosition, 'vehicle_id', vehicle_id)
+    return result
 
 @app.get("/{agency_id}/trip_detail_route_code/{route_code}",tags=["Real-Time data"])
 async def get_trip_detail_and_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
@@ -605,8 +658,14 @@ def read_user(username: str, db: Session = Depends(get_db),token: str = Depends(
         raise HTTPException(status_code=404, detail="User not found")
     return db_user
 
+
+@app.get("/routes", response_model=List[str])
+async def get_all_routes():
+    return [route.path for route in app.routes]
+
 @app.on_event("startup")
 async def startup_event():
+    app.state.redis = await aioredis.from_url('redis://redis:6379')
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_error_logger = logging.getLogger("uvicorn.error")
     logger = logging.getLogger("uvicorn.app")
@@ -630,6 +689,11 @@ async def startup_event():
     uvicorn_access_logger.addFilter(LogFilter())
     uvicorn_error_logger.addFilter(LogFilter())
     logger.addFilter(LogFilter())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    app.state.redis.close()
+    await app.state.redis.wait_closed()
 
 app.add_middleware(
     CORSMiddleware,
