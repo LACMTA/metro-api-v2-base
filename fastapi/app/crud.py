@@ -15,7 +15,11 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import aliased
 from sqlalchemy import and_
 from fastapi_pagination.ext.sqlalchemy import paginate as paginate_sqlalchemy
+
 from geoalchemy2 import functions,shape
+from geoalchemy2.elements import WKBElement
+from geoalchemy2.shape import to_shape
+
 from shapely.geometry import Point, mapping
 from shapely import geometry as geo
 # from shapely import to_geojson
@@ -28,7 +32,6 @@ from .models import BaseModel
 from .utils.log_helper import *
 from .utils.email_helper import *
 from .utils.db_helper import *
-
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -48,10 +51,7 @@ from sqlalchemy.orm.decl_api import DeclarativeMeta
 
 redis = aioredis.from_url("redis://redis:6379", decode_responses=True, encoding='utf-8', socket_connect_timeout=5)
 
-import sqlalchemy
-from geoalchemy2.elements import WKBElement
-from geoalchemy2.shape import to_shape
-
+# import sqlalchemy
 
 def asdict(obj):
     result = {}
@@ -97,7 +97,6 @@ async def get_data_redis(db, model, id_field, id_value):
     # Ensure data is a list
     if not isinstance(data, list):
         data = [data]
-
     return data
 
 def get_unique_keys(db: Session, model, agency_id, key_column=None):
@@ -114,7 +113,7 @@ def get_unique_keys(db: Session, model, agency_id, key_column=None):
 
 ####
 async def get_vehicle_data_async(db: AsyncSession, agency_id: str, vehicle_id: str):
-    result = await db.execute(select(models.VehiclePosition).where(models.VehiclePosition.agency_id == agency_id,models.VehiclePosition.vehicle_id == vehicle_id))
+    result = await db.execute(select(models.VehiclePositions).where(models.VehiclePositions.agency_id == agency_id,models.VehiclePositions.vehicle_id == vehicle_id))
     data = result.scalars().one_or_none()
     return data
 
@@ -138,18 +137,37 @@ async def get_list_data_async(db: AsyncSession, model: Type[DeclarativeMeta], ag
     data = result.scalars().all()
     return data
 
+async def get_list_of_unique_values_async(session: AsyncSession, model, agency_id: str, field_name: str):
+    """
+    Get a list of unique values for a specific field in a model.
+    """
+    # Use reflection to get the field from the model
+    field = getattr(model, field_name, None)
+    if field is None:
+        raise ValueError(f"{field_name} does not exist in {model.__name__}")
 
+    # Query the database for all values of this field
+    stmt = select(field).where(model.agency_id == agency_id)
+    result = await session.execute(stmt)
 
-async def get_all_gtfs_rt_vehicle_positions_trip_data(async_db: AsyncSession, agency_id: str, geojson: bool):
+    # Use a set to get unique values, skipping None values
+    unique_values  = []
+    for row in result:
+        if row[0] is not None and row[0] not in unique_values:
+            unique_values.append(row[0])
+
+    return unique_values
+
+async def get_all_gtfs_rt_vehicle_positions_trip_data_async(async_db: AsyncSession, agency_id: str, geojson: bool):
     result = await async_db.execute(
-        select([StopTimeUpdate, VehiclePosition, Stop, StopTimes])
+        select([models.StopTimeUpdates, models.VehiclePosition, models.Stop, models.StopTimes])
         .where(
             and_(
-                StopTimeUpdate.trip_id == VehiclePosition.trip_id,
-                StopTimeUpdate.stop_id == Stop.stop_id,
-                StopTimes.trip_id == VehiclePosition.trip_id,
-                StopTimes.stop_sequence == VehiclePosition.current_stop_sequence,
-                VehiclePosition.agency_id == agency_id
+                models.StopTimeUpdates.trip_id == models.VehiclePositions.trip_id,
+                models.StopTimeUpdates.stop_id == models.Stops.stop_id,
+                models.StopTimes.trip_id == models.VehiclePositions.trip_id,
+                models.StopTimes.stop_sequence == models.VehiclePositions.current_stop_sequence,
+                models.VehiclePositions.agency_id == agency_id
             )
         )
     )
@@ -208,7 +226,7 @@ def temp_solution(val):
 def list_gtfs_rt_trips_by_field_name(db, field_name: str,agency_id: str):
     result = []
     if field_name == 'stop_id':
-        the_query = db.query(getattr(models.StopTimeUpdate,field_name),models.StopTimeUpdate.agency_id).with_entities(getattr(models.StopTimeUpdate,field_name)).filter(models.StopTimeUpdate.agency_id == agency_id).all()
+        the_query = db.query(getattr(models.StopTimeUpdates,field_name),models.StopTimeUpdates.agency_id).with_entities(getattr(models.StopTimeUpdates,field_name)).filter(models.StopTimeUpdates.agency_id == agency_id).all()
     else:
         the_query = db.query(getattr(models.TripUpdate,field_name),models.TripUpdate.agency_id).with_entities(getattr(models.TripUpdate,field_name)).filter(models.TripUpdate.agency_id == agency_id).all()
     
@@ -217,7 +235,7 @@ def list_gtfs_rt_trips_by_field_name(db, field_name: str,agency_id: str):
     return result
 
 def list_gtfs_rt_vehicle_positions_by_field_name(db, field_name: str,agency_id: str):
-    the_query = db.query(getattr(models.VehiclePosition,field_name),models.VehiclePosition.agency_id).with_entities(getattr(models.VehiclePosition,field_name)).filter(models.VehiclePosition.agency_id == agency_id).all()
+    the_query = db.query(getattr(models.VehiclePosition,field_name),models.VehiclePositions.agency_id).with_entities(getattr(models.VehiclePosition,field_name)).filter(models.VehiclePositions.agency_id == agency_id).all()
     result = []
     for row in the_query:
         result.append(row[0])
@@ -231,7 +249,7 @@ async def get_gtfs_rt_trips_by_field_name(db, field_name: str, field_value: str,
         return pickle.loads(cached_result)
 
     if field_name == 'stop_id':
-        the_query = db.query(models.TripUpdate).join(models.StopTimeUpdate).filter(getattr(models.StopTimeUpdate,field_name) == field_value,models.TripUpdate.agency_id == agency_id).all()
+        the_query = db.query(models.TripUpdate).join(models.StopTimeUpdates).filter(getattr(models.StopTimeUpdates,field_name) == field_value,models.TripUpdate.agency_id == agency_id).all()
     else:
         the_query = db.query(models.TripUpdate).filter(getattr(models.TripUpdate,field_name) == field_value,models.TripUpdate.agency_id == agency_id).all()
         if len(the_query) == 0:
@@ -277,7 +295,7 @@ async def get_all_gtfs_rt_vehicle_positions(db, agency_id: str, geojson: bool):
         if cached_result is not None:
             return pickle.loads(cached_result)
 
-        the_query = db.query(models.VehiclePosition).filter(models.VehiclePosition.agency_id == agency_id)
+        the_query = db.query(models.VehiclePosition).filter(models.VehiclePositions.agency_id == agency_id)
         all_rows = await get_all_data(the_query)  # Use the utility function here
 
         result = []
@@ -308,8 +326,8 @@ async def get_all_gtfs_rt_vehicle_positions(db, agency_id: str, geojson: bool):
 
 def get_gtfs_rt_vehicle_positions_by_field_name(db, field_name: str,field_value: str,geojson:bool,agency_id: str):
     if field_value is None:
-        the_query = db.query(models.VehiclePosition).filter(models.VehiclePosition.agency_id == agency_id).all()
-    the_query = db.query(models.VehiclePosition).filter(getattr(models.VehiclePosition,field_name) == field_value,models.VehiclePosition.agency_id == agency_id).all()
+        the_query = db.query(models.VehiclePosition).filter(models.VehiclePositions.agency_id == agency_id).all()
+    the_query = db.query(models.VehiclePosition).filter(getattr(models.VehiclePosition,field_name) == field_value,models.VehiclePositions.agency_id == agency_id).all()
     result = []
     if geojson == True:
         this_json = {}
@@ -328,10 +346,10 @@ def get_gtfs_rt_vehicle_positions_by_field_name(db, field_name: str,field_value:
         result.append(new_row)
     return result
 
-def get_all_gtfs_rt_vehicle_positions_trip_data(db, agency_id: str, geojson: bool):
+def _async(db, agency_id: str, geojson: bool):
     # Query the database for vehicle positions
     vehicle_positions = db.query(models.VehiclePosition).filter(
-        models.VehiclePosition.agency_id == agency_id).all()
+        models.VehiclePositions.agency_id == agency_id).all()
 
     # If geojson is True, return the data in GeoJSON format
     if geojson:
@@ -352,9 +370,9 @@ def get_all_gtfs_rt_vehicle_positions_trip_data(db, agency_id: str, geojson: boo
                 models.Stops.agency_id == agency_id).first()
             new_row.stop_name = stop_name_query['stop_name']
 
-            stop_time_update_query = db.query(models.StopTimeUpdate).filter(
-                models.StopTimeUpdate.trip_id == new_row.trip_id,
-                models.StopTimeUpdate.stop_sequence == new_row.current_stop_sequence).first()
+            stop_time_update_query = db.query(models.StopTimeUpdates).filter(
+                models.StopTimeUpdates.trip_id == new_row.trip_id,
+                models.StopTimeUpdates.stop_sequence == new_row.current_stop_sequence).first()
 
             if stop_time_update_query:
                 new_row.trip_assigned = True
@@ -380,7 +398,7 @@ def get_all_gtfs_rt_vehicle_positions_trip_data(db, agency_id: str, geojson: boo
 
 def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(db,route_code: str, geojson:bool,agency_id:str):
     result = []
-    the_query = db.query(models.VehiclePosition).filter(models.VehiclePosition.route_code == route_code,models.VehiclePosition.agency_id == agency_id).all()
+    the_query = db.query(models.VehiclePosition).filter(models.VehiclePositions.route_code == route_code,models.VehiclePositions.agency_id == agency_id).all()
     if geojson == True:
         this_json = {}
         count = 0
@@ -400,7 +418,7 @@ def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(db,route_code: str, ge
         new_row = vehicle_position_reformat_for_trip_details(row,geojson)
         stop_name_query = db.query(models.Stops.stop_name).filter(models.Stops.stop_id == new_row.stop_id,models.Stops.agency_id == agency_id).first()
         new_row.stop_name = stop_name_query[0]
-        upcoming_stop_time_update_query = db.query(models.StopTimeUpdate).filter(models.StopTimeUpdate.trip_id == new_row.trip_id,models.StopTimeUpdate.stop_sequence == new_row.current_stop_sequence).first()
+        upcoming_stop_time_update_query = db.query(models.StopTimeUpdates).filter(models.StopTimeUpdates.trip_id == new_row.trip_id,models.StopTimeUpdates.stop_sequence == new_row.current_stop_sequence).first()
         if upcoming_stop_time_update_query is not None:
             new_row.trip_assigned = True
             trip_details_query = db.query(models.TripUpdate).filter(models.TripUpdate.trip_id == new_row.trip_id).first()
@@ -420,7 +438,7 @@ def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(db,route_code: str, ge
 
 
 async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session,route_code: str, geojson:bool,agency_id:str):
-    the_query = await session.execute(select(models.VehiclePosition).where(models.VehiclePosition.route_code == route_code,models.VehiclePosition.agency_id == agency_id).order_by(models.VehiclePosition.route_code))
+    the_query = await session.execute(select(models.VehiclePosition).where(models.VehiclePositions.route_code == route_code,models.VehiclePositions.agency_id == agency_id).order_by(models.VehiclePositions.route_code))
     if geojson == True:
         this_json = {}
         count = 0
@@ -436,7 +454,7 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(sessio
                 if new_geojson['properties']['trip']['trip_id']:
                         geojson_trip_id = new_geojson['properties']['trip']['trip_id']
                         geojson_current_stop_sequence = new_geojson['properties']['trip']['current_stop_sequence']
-                        upcoming_stop_time_update_query = await session.execute(select(models.StopTimeUpdate).where(models.StopTimeUpdate.trip_id == geojson_trip_id,models.StopTimeUpdate.stop_sequence == geojson_current_stop_sequence))
+                        upcoming_stop_time_update_query = await session.execute(select(models.StopTimeUpdates).where(models.StopTimeUpdates.trip_id == geojson_trip_id,models.StopTimeUpdates.stop_sequence == geojson_current_stop_sequence))
                         # new_geojson['properties']['trip_info']['upcoming_stop_time_update'] = upcoming_stop_time_update_query.scalar()
                             # new_geojson['properties']['trip_info']['upcoming_stop_time_update'] = row
                         upcoming_update = upcoming_stop_time_reformat_for_async(upcoming_stop_time_update_query.scalars().first())
@@ -467,7 +485,7 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(sessio
                 new_row['stop_name'] = stop_name_query.scalar()
                 new_row_current_stop_sequence = new_row['trip']['current_stop_sequence']
                 new_row_trip_id = new_row['trip']['trip_id']
-                upcoming_stop_time_update_query = await session.execute(select(models.StopTimeUpdate).where(models.StopTimeUpdate.trip_id == new_row_trip_id,models.StopTimeUpdate.stop_sequence == new_row_current_stop_sequence))
+                upcoming_stop_time_update_query = await session.execute(select(models.StopTimeUpdates).where(models.StopTimeUpdates.trip_id == new_row_trip_id,models.StopTimeUpdates.stop_sequence == new_row_current_stop_sequence))
                 if upcoming_stop_time_update_query is not None:
                     new_row['trip_assigned'] = True
                     trip_details_query = await session.execute(select(models.TripUpdate).where(models.TripUpdate.trip_id == new_row_trip_id))
@@ -492,7 +510,7 @@ def get_distinct_stop_ids(the_query):
     return stop_id_list
 
 async def get_gtfs_rt_line_detail_updates_for_route_code(session,route_code: str, geojson:bool,agency_id:str):
-    the_query = await session.execute(select(models.StopTimeUpdate).where(models.StopTimeUpdate.route_code == route_code,models.StopTimeUpdate.agency_id == agency_id))
+    the_query = await session.execute(select(models.StopTimeUpdates).where(models.StopTimeUpdates.route_code == route_code,models.StopTimeUpdates.agency_id == agency_id))
 
     # function call to get list of distinct stop_ids from the_query results
     stop_id_list = get_distinct_stop_ids(the_query.scalars().all())
@@ -516,7 +534,7 @@ async def get_gtfs_rt_line_detail_updates_for_route_code(session,route_code: str
             count += 1
             new_geojson = '' # function call to reformat to geojson
 
-            # if new_geojson is valid (if at least 1 StopTimeUpdate exists), then do stuff
+            # if new_geojson is valid (if at least 1 StopTimeUpdates exists), then do stuff
 
             features.append(new_geojson)
         this_json['metadata'] = {'count': count}
@@ -545,7 +563,7 @@ async def get_gtfs_rt_vehicle_positions_trip_data_redis(db, vehicle_id: str):
     
     if data is None:
         # If data is not in Redis, get it from the database
-        result = db.query(models.VehiclePosition).filter(models.VehiclePosition.vehicle_id == vehicle_id).all()
+        result = db.query(models.VehiclePosition).filter(models.VehiclePositions.vehicle_id == vehicle_id).all()
         
         if not result:
             return None
@@ -565,7 +583,7 @@ async def get_gtfs_rt_vehicle_positions_trip_data(db, vehicle_id: str, geojson: 
         return pickle.loads(result)
 
     result = []
-    the_query = db.query(models.VehiclePosition).filter(models.VehiclePosition.vehicle_id == vehicle_id,models.VehiclePosition.agency_id == agency_id).all()
+    the_query = db.query(models.VehiclePosition).filter(models.VehiclePositions.vehicle_id == vehicle_id,models.VehiclePositions.agency_id == agency_id).all()
     if geojson == True:
         this_json = {}
         count = 0
@@ -591,7 +609,7 @@ async def get_gtfs_rt_vehicle_positions_trip_data(db, vehicle_id: str, geojson: 
         new_row = vehicle_position_reformat_for_trip_details(row,geojson)
         stop_name_query = db.query(models.Stops.stop_name).filter(models.Stops.stop_id == new_row.stop_id,models.Stops.agency_id == agency_id).first()
         new_row.stop_name = stop_name_query[0]
-        upcoming_stop_time_update_query = db.query(models.StopTimeUpdate).filter(models.StopTimeUpdate.trip_id == new_row.trip_id,models.StopTimeUpdate.stop_sequence == new_row.current_stop_sequence).first()
+        upcoming_stop_time_update_query = db.query(models.StopTimeUpdates).filter(models.StopTimeUpdates.trip_id == new_row.trip_id,models.StopTimeUpdates.stop_sequence == new_row.current_stop_sequence).first()
         if upcoming_stop_time_update_query is not None:
             new_row.trip_assigned = True
         new_row.upcoming_stop_time_update = upcoming_stop_time_reformat(upcoming_stop_time_update_query)

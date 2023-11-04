@@ -138,13 +138,18 @@ class GoPassGroupEnum(str, Enum):
 class TripUpdatesFieldsEnum(str, Enum):
     trip_id = "trip_id"
     route_id = "route_id"
-    stop_id = "stop_id"
 
 class VehiclePositionsFieldsEnum(str, Enum):
     vehicle_id = "vehicle_id"
     trip_route_id = "trip_route_id"
     route_code = "route_code"
     stop_id = "stop_id"
+
+class StopTimeUpdatesFieldsEnum(str, Enum):
+    stop_id = "stop_id"
+    trip_id = "trip_id"
+    stop_sequence = "stop_sequence"
+
 class DayTypesEnum(str, Enum):
     weekday = "weekday"
     saturday = "saturday"
@@ -159,9 +164,25 @@ class FormatEnum(str, Enum):
 class OperationEnum(str, Enum):
     all = 'all'
     list = 'list'
+    id = 'id'
+
+
+class IdTypeEnum(str, Enum):
+    vehicle_id = "vehicle_id"
+    trip_id = "trip_id"
+    route_code = "route_code"
+    stop_id = "stop_id"
+
+class LogFilter(logging.Filter):
+    def filter(self, record):
+        record.app = "api.metro.net"
+        record.env = Config.RUNNING_ENV
+        return True
+
 
 tags_metadata = [
     {"name": "Real-Time data", "description": "Includes GTFS-RT data for Metro Rail and Metro Bus."},
+    {"name": "Canceled Service Data", "description": "Canceled service data for Metro Bus and Metro Rail."},
     {"name": "Static data", "description": "GTFS Static data, including routes, stops, and schedules."},
     {"name": "Other data", "description": "Other data on an as-needed basis."},
     {"name": "User Methods", "description": "Methods for user authentication and authorization."},
@@ -193,18 +214,24 @@ app.mount("/", StaticFiles(directory="app/frontend"))
 
 ###### Utility functions ######
 from geojson import Point, Feature, FeatureCollection
+from shapely import wkt
 
 def to_geojson(data):
     features = []
     for item in data:
-        # Parse the 'geometry' string into a Point object
-        geometry = item['geometry'].replace('POINT (', '').replace(')', '').split()
-        point = Point((float(geometry[0]), float(geometry[1])))
+        # Create a Point from the 'geometry' coordinates
+        geometry = Point(item['geometry']['coordinates'])
         # Exclude the 'geometry' key from the properties
         properties = {key: item[key] for key in item if key != 'geometry'}
-        feature = Feature(geometry=point, properties=properties)
+        feature = Feature(geometry=geometry, properties=properties)
         features.append(feature)
-    return FeatureCollection(features)
+    feature_collection = FeatureCollection(features)
+    # Add metadata
+    feature_collection['properties'] = {
+        'count': len(features),
+        'timestamp': datetime.now().isoformat()
+    }
+    return feature_collection
 
 # code from https://fastapi-restful.netlify.app/user-guide/repeated-tasks/
 
@@ -256,56 +283,15 @@ def standardize_string(input_string):
 #  Begin Routes
 ####################
 
-@app.get("/{agency_id}/trip_updates/all",tags=["Real-Time data"])
-# @cache()
-async def all_trip_updates_updates(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
-    result = crud.get_all_gtfs_rt_trips(db,agency_id.value)
-    return result
+#### Begin GTFS-RT Routes ####
 
-@app.get("/{agency_id}/trip_updates/{field_name}/{field_value}",tags=["Real-Time data"])
-async def get_gtfs_rt_trip_updates_by_field_name(agency_id: AgencyIdEnum, field_name: TripUpdatesFieldsEnum, field_value=Optional[str], db: Session = Depends(get_db)):
-# async def get_gtfs_rt_trip_updates_by_field_name(agency_id,field_name,field_value=Optional[str],db: Session = Depends(get_db)):
-    result = ""
-    if field_name in get_columns_from_schema('trip_updates') or field_name == 'stop_id':
-        if field_value == 'list':
-            result = crud.list_gtfs_rt_trips_by_field_name(db,field_name.value,agency_id.value)
-            return result
-        multiple_values = field_value.split(',')
-        if len(multiple_values) > 1:
-            result_array = []
-            for value in multiple_values:
-                temp_result = crud.get_gtfs_rt_trips_by_field_name(db,field_name.value,value,agency_id.value)
-                if len(temp_result) == 0:
-                    temp_result = { "message": "field_value '" + value + "' not found in field_name '" + field_name.value + "'" }
-                result_array.append(temp_result)
-            return result_array
-        else:
-            result = crud.get_gtfs_rt_trips_by_field_name(db,field_name.value,field_value,agency_id.value)
-            if len(result) == 0:
-                result = { "message": "field_value '" + field_value + "' not found in field_name '" + field_name.value + "'" }
-                return result
-            return result
-
-@app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])
-async def get_trip_updates(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, operation: Optional[OperationEnum] = None, format: FormatEnum = Query(FormatEnum.json), db: AsyncSession = Depends(get_async_db)):
-    if vehicle_id is None:        
-        if operation == OperationEnum.all:
-            # Get all data
-            stmt = select(models.TripUpdates).where(models.TripUpdates.agency_id == agency_id.value)
-            result = await db.execute(stmt)
-            data = result.scalars().all()
-        elif operation == OperationEnum.list:
-            # Get list of unique keys
-            stmt = select(distinct(models.TripUpdates.vehicle_id)).where(models.TripUpdates.agency_id == agency_id.value)
-            result = await db.execute(stmt)
-            data = result.scalars().all()
-    else:
-        # Get specific vehicle data
-        stmt = select(models.TripUpdates).where(models.TripUpdates.vehicle_id == vehicle_id, models.TripUpdates.agency_id == agency_id.value)
-        result = await db.execute(stmt)
-        data = result.scalar_one_or_none()
-        if data is not None:
-            data = data.__dict__
+@app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])     
+async def get_all_trip_updates(agency_id: AgencyIdEnum, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
+    """
+    Get all trip updates.
+    """
+    model = models.TripUpdates
+    data = await crud.get_all_data_async(async_db, model, agency_id.value)
     if data is None:
         raise HTTPException(status_code=404, detail="Data not found")
     if format == FormatEnum.geojson:
@@ -313,79 +299,82 @@ async def get_trip_updates(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = 
         data = to_geojson(data)
     return data
 
-
-@app.get("/{agency_id}/vehicle_positions/all", tags=["Real-Time data"])
-async def all_vehicle_position_updates(agency_id: AgencyIdEnum, async_db: AsyncSession = Depends(get_async_db), geojson: bool = False):
-    # Use the generic function here
-    result = await crud.get_data_async(async_db, models.VehiclePosition, 'agency_id', agency_id.value)
-
-    # If geojson is True, convert the result to GeoJSON format
-    if geojson:
-        result = {
-            'metadata': {'count': len(result), 'title': 'Vehicle Positions'},
-            'type': "FeatureCollection",
-            'features': result
-        }
-
-    return result
-# @app.get("/{agency_id}/vehicle_positions_no_cache/all",tags=["Real-Time data"])
-# async def all_vehicle_position_updates(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
-#     result = crud.get_all_gtfs_rt_vehicle_positions(db,agency_id.value,geojson=False)
-#     return result
-
-@app.get("/{agency_id}/vehicle_positions/{field_name}/{field_value}",tags=["Real-Time data"])
-async def vehicle_position_updates(agency_id: AgencyIdEnum, field_name: VehiclePositionsFieldsEnum, geojson:bool=False,field_value=Optional[str], db: Session = Depends(get_db)):
-    # result = crud.get_gtfs_rt_vehicle_positions_by_field_name(db,field_name,field_value,agency_id)
-    result = ""
-    if field_name in get_columns_from_schema('vehicle_position_updates'):
-        if field_value == 'list':
-            result = crud.list_gtfs_rt_vehicle_positions_by_field_name(db,field_name.value,agency_id.value)
-            return result
-        multiple_values = field_value.split(',')
-        print('multiple_values')
-        print(multiple_values)
-        if len(multiple_values) > 1:
-            result_array = []
-            for value in multiple_values:
-                temp_result = crud.get_gtfs_rt_vehicle_positions_by_field_name(db,field_name.value,value,geojson,agency_id.value)
-                if len(temp_result) == 0:
-                    temp_result = { "message": "field_value '" + value + "' not found in field_name '" + field_name.value + "'" }
-                result_array.append(temp_result)
-            return result_array
-        else:
-            result = crud.get_gtfs_rt_vehicle_positions_by_field_name(db,field_name.value,field_value,geojson,agency_id.value)
-            if len(result) == 0:
-                result = { "message": "field_value '" + field_value + "' not found in field_name '" + field_name.value + "'" }
-                return result
-            return result
-        
-@app.get("/{agency_id}/vehicle_positions", tags=["Real-Time data"])        
-async def get_vehicle_positions(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, operation: Optional[OperationEnum] = None, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
-    model = models.VehiclePosition if operation == OperationEnum.all else models.VehiclePosition
-    cache_key = f"{agency_id.value}:{vehicle_id if vehicle_id else 'all'}"
-    cached_data = await app.state.redis.get(cache_key)
-    if cached_data is not None:
-        return json.loads(cached_data)
-    data = None  # Initialize data to None
-    if vehicle_id is not None:
-        result = await crud.get_data_async(async_db, model, agency_id.value, 'vehicle_id', vehicle_id)
+@app.get("/{agency_id}/trip_updates/{field}/{ids}", tags=["Real-Time data"])     
+async def get_trip_updates_by_ids(agency_id: AgencyIdEnum, field: TripUpdatesFieldsEnum, ids: str, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
+    """
+    Get specific trip updates by IDs dependant on the `field` selected. IDs can be provided as a comma-separated list.
+    """
+    model = models.TripUpdates
+    data = {}
+    ids = ids.split(',')
+    for id in ids:
+        result = await crud.get_data_async(async_db, model, agency_id.value, field.value, id)
         if result is None:
-            data = ['Vehicle ID: ' + vehicle_id + ' not found']
-        else:
-            data = result.fetchall()
-    else:        
-        if operation == OperationEnum.all:
-            data = await crud.get_all_data_async(async_db, model, agency_id.value)
-        # elif operation == OperationEnum.list:
-        #     result = await crud.get_list_data_async(model, agency_id.value)
-        #     data = result.fetchall()
+            raise HTTPException(status_code=404, detail=f"Data not found for ID {id}")
+        if format == FormatEnum.geojson:
+            # Convert data to GeoJSON format
+            result = to_geojson(result)
+        data[id] = result
+    return data
+
+@app.get("/{agency_id}/trip_updates/{field}", tags=["Real-Time data"])     
+async def get_list_of_field_values(agency_id: AgencyIdEnum, field: TripUpdatesFieldsEnum, async_db: AsyncSession = Depends(get_async_db)):
+    """
+    Get a list of all values for a specific field in the trip updates.
+    """
+    model = models.TripUpdates
+    data = await crud.get_list_of_unique_values_async(async_db, model, agency_id.value, field.value)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Data not found")
+    return data
+
+@app.get("/{agency_id}/vehicle_positions", tags=["Real-Time data"])     
+async def get_all_vehicle_positions(agency_id: AgencyIdEnum, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
+    """
+    Get all vehicle positions updates.
+    """
+    model = models.VehiclePositions
+    data = await crud.get_all_data_async(async_db, model, agency_id.value)
     if data is None:
         raise HTTPException(status_code=404, detail="Data not found")
     if format == FormatEnum.geojson:
         # Convert data to GeoJSON format
         data = to_geojson(data)
-    await app.state.redis.set(cache_key, json.dumps(data))
     return data
+
+@app.get("/{agency_id}/vehicle_positions/{field}/{ids}", tags=["Real-Time data"])     
+async def get_vehicle_positions_by_ids(agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
+    """
+    Get specific vehicle position updates by IDs dependant on the `field` selected. IDs can be provided as a comma-separated list.
+    """
+    model = models.VehiclePositions
+    data = {}
+    ids = ids.split(',')
+    for id in ids:
+        result = await crud.get_data_async(async_db, model, agency_id.value, field.value, id)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"Data not found for ID {id}")
+        if format == FormatEnum.geojson:
+            # Convert data to GeoJSON format
+            result = to_geojson(result)
+        data[id] = result
+    return data
+
+@app.get("/{agency_id}/vehicle_positions/{field}", tags=["Real-Time data"])     
+async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, async_db: AsyncSession = Depends(get_async_db)):
+    """
+    Get a list of all values for a specific field in the vehicle positions updates.
+    """
+    model = models.VehiclePositions
+    data = await crud.get_list_of_unique_values_async(async_db, model, agency_id.value, field.value)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Data not found")
+    return data
+
+
+
+
+##### todo: Needs to be tested
 
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
 async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
@@ -393,7 +382,57 @@ async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str
     # crud.get_gtfs_rt_vehicle_positions_by_field_name(db,vehicle_id,geojson,agency_id.value)
     return result
 
-@app.get("/canceled_service_summary",tags=["Real-Time data"])
+
+
+@app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id?}", tags=["Real-Time data"])
+async def get_trip_detail_by_vehicle(agency_id: str, vehicle_id: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
+    if operation == OperationEnum.ALL:
+        result = await crud.get_all_data_async(async_db, models.VehiclePositions, operation.value)
+        return result
+    if vehicle_id:
+        multiple_values = vehicle_id.split(',')
+        if len(multiple_values) > 1:
+            result_array = []
+            for value in multiple_values:
+                temp_result = await crud.get_data_async(async_db, models.VehiclePositions, 'vehicle_id', value)
+                if len(temp_result) == 0:
+                    temp_result = { "message": "field_value '" + value + "' not found in field_name '" + value + "'" }
+                result_array.append(temp_result)
+            return result_array
+        else:
+            result = await crud.get_data_async(async_db, models.VehiclePositions, 'vehicle_id', vehicle_id)
+        return result
+    return {"message": "No vehicle_id provided"}
+
+
+
+@app.get("/{agency_id}/trip_detail/route/{route_code?}", tags=["Real-Time data"])
+async def get_trip_detail_by_route(agency_id: str, route_code: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
+    if operation == OperationEnum.ALL:
+        result = await crud.get_all_data_async(async_db, models.VehiclePositions, operation.value)
+        return result
+    if route_code:
+        multiple_values = route_code.split(',')
+        if len(multiple_values) > 1:
+            result_array = []
+            for value in multiple_values:
+                temp_result = await crud.get_data_async(async_db, models.VehiclePositions, 'route_code', value)
+                if len(temp_result) == 0:
+                    temp_result = { "message": "route'" + route_code + "' has no live trips'" }
+                    return temp_result
+                result_array.append(temp_result)
+            return result_array
+        else:
+            result = await crud.get_data_async(async_db, models.VehiclePositions, 'route_code', route_code)
+        return result
+    return {"message": "No route_code provided"}
+
+###------------ End todo: Needs to be tested--------------
+
+#### END GTFS-RT Routes ####
+
+
+@app.get("/canceled_service_summary",tags=["Canceled Service Data"])
 async def get_canceled_trip_summary(db: Session = Depends(get_db)):
     result = crud.get_canceled_trips(db,'all')
     canceled_trips_summary = {}
@@ -418,56 +457,17 @@ async def get_canceled_trip_summary(db: Session = Depends(get_db)):
                 "total_canceled_trips":total_canceled_trips,
                 "last_updated":update_time}
 
-@app.get("/metrics")
-async def metrics():
-    return generate_latest()
-
-
-@app.get("/{operation_id}/trip_detail/{vehicle_id}", tags=["Real-Time data"])
-async def get_trip_detail(operation_id: OperationEnum, vehicle_id: str, geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
-    if operation_id == OperationEnum.ALL:
-        result = await crud.get_all_data_async(async_db, models.VehiclePosition, operation_id.value)
-        return result
-    multiple_values = vehicle_id.split(',')
-    if len(multiple_values) > 1:
-        result_array = []
-        for value in multiple_values:
-            temp_result = await crud.get_data_async(async_db, models.VehiclePosition, 'vehicle_id', value)
-            if len(temp_result) == 0:
-                temp_result = { "message": "field_value '" + value + "' not found in field_name '" + value + "'" }
-            result_array.append(temp_result)
-        return result_array
-    else:
-        result = await crud.get_data_async(async_db, models.VehiclePosition, 'vehicle_id', vehicle_id)
-    return result
-
-@app.get("/{agency_id}/trip_detail_route_code/{route_code}",tags=["Real-Time data"])
-async def get_trip_detail_and_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
-    result_array = []
-    temp_result = crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(db,route_code,geojson,agency_id.value)
-    if len(temp_result) == 0:
-        temp_result = { "message": "route'" + route_code + "' has no live trips'" }
-        return temp_result
-    result_array.append(temp_result)
-    return result_array
-
-
-#### END GTFS-RT Routes ####
-
-
-@app.get("/canceled_service/line/{line}",tags=["Real-Time data"])
+@app.get("/canceled_service/line/{line}",tags=["Canceled Service Data"])
 async def get_canceled_trip(db: Session = Depends(get_db),line: str = None):
     result = crud.get_canceled_trips(db,line)
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
-@app.get("/canceled_service/all",tags=["Real-Time data"])
+@app.get("/canceled_service/all",tags=["Canceled Service Data"])
 async def get_canceled_trip(db: Session = Depends(get_db)):
     result = crud.get_canceled_trips(db,'all')
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
-
-
 
 ### GTFS Static data ###
 @app.get("/{agency_id}/route_stops/{route_code}",tags=["Static data"])
@@ -546,6 +546,7 @@ async def get_routes(agency_id: AgencyIdEnum,route_id, db: Session = Depends(get
     result = crud.get_routes_by_route_id(db,route_id,agency_id.value)
     return result
 
+### Todo: Needs to be updated to use async and redis
 @app.get("/{agency_id}/route_overview",tags=["Static data"])
 async def get_routes(agency_id: AllAgencyIdEnum,route_code:str="", db: Session = Depends(get_db)):
     result = crud.get_route_overview_by_route_code(db,route_code,agency_id.value)
@@ -594,11 +595,10 @@ def index(request:Request):
     
     return templates.TemplateResponse("index.html", context= {"request": request,"current_api_version":Config.CURRENT_API_VERSION,"update_time":human_readable_default_update})
 
-class LogFilter(logging.Filter):
-    def filter(self, record):
-        record.app = "api.metro.net"
-        record.env = Config.RUNNING_ENV
-        return True
+### Misc routes
+@app.get("/metrics")
+async def metrics():
+    return generate_latest()
 
 
 # tokens

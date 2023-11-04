@@ -3,6 +3,7 @@ from geoalchemy2 import *
 from geoalchemy2.shape import to_shape
 from geoalchemy2.elements import WKBElement
 from shapely.geometry import mapping
+from . import schemas
 
 from .gtfs_models import *
 
@@ -238,7 +239,7 @@ class User(Base):
 # StopTimeUpdate
 # VehiclePosition
 
-class TripUpdate(BaseModel):
+class TripUpdates(BaseModel):
     __tablename__ = 'trip_updates'
     # This replaces the TripDescriptor message
     # TODO: figure out the relations
@@ -255,7 +256,9 @@ class TripUpdate(BaseModel):
     # moved from the header, and reformatted as datetime
     timestamp = Column(Integer)
     stop_time_json = Column(String)
-    stop_time_updates = relationship('StopTimeUpdate', backref=backref('trip_updates',lazy="joined"))
+    stop_time_updates = relationship('StopTimeUpdates', backref=backref('trip_updates',lazy="joined"))
+
+
     class Config:
         schema_extra = {
             "definition": {
@@ -267,7 +270,7 @@ class TripUpdate(BaseModel):
             }
         }
 
-class StopTimeUpdate(BaseModel):
+class StopTimeUpdates(BaseModel):
     __tablename__ = 'stop_time_updates'
     # oid = Column(Integer, )
 
@@ -289,7 +292,7 @@ class StopTimeUpdate(BaseModel):
     # Link it to the TripUpdate
     # trip_id = Column(Integer,)
 
-class VehiclePosition(BaseModel):
+class VehiclePositions(BaseModel):
     __tablename__ = "vehicle_position_updates"
 
     # Vehicle information
@@ -319,4 +322,9 @@ class VehiclePosition(BaseModel):
     agency_id = Column(String)
     timestamp = Column(Integer)
 # So one can loop over all classes to clear them for a new load (-o option)
-AllClasses = (TripUpdate, StopTimeUpdate, VehiclePosition)
+GTFSRTSqlAlchemyModels = {
+    schemas.TripUpdates: TripUpdates,
+    schemas.StopTimeUpdates: StopTimeUpdates,
+    schemas.VehiclePositions: VehiclePositions,
+}
+GTFSRTClasses = (TripUpdates, StopTimeUpdates, VehiclePositions)
