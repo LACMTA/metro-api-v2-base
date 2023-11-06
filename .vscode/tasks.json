@@ -10,8 +10,11 @@
                 "isDefault": true
             },
             "presentation": {
-                "reveal": "always"
-            }
+                "reveal": "always",
+                "panel": "dedicated",
+                "showReuseMessage": false,
+            },
+            "problemMatcher": []
         }
     ]
 }

@@ -1,0 +1,5 @@
+{
+    "key": "ctrl+shift+b", // replace with your running task keybind
+    "command": "workbench.action.tasks.restartTask",
+    "when": "taskRunning"
+}
