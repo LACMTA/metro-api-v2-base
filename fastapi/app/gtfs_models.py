@@ -7,6 +7,7 @@ from sqlalchemy.orm import relationship, backref
 from geoalchemy2 import *
 # from sqlalchemy.dialects.postgresql import JSON
 from .config import Config
+from .database import Base
 
 GTFSrtBase = declarative_base(metadata=MetaData(schema=Config.TARGET_DB_SCHEMA))
 
@@ -95,7 +96,7 @@ class VehiclePosition(GTFSrtBase):
 
     agency_id = Column(String)
     timestamp = Column(Integer)
-
-
+    def to_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns if getattr(self, c.name) is not None}
 # So one can loop over all classes to clear them for a new load (-o option)
 AllClasses = (TripUpdate, StopTimeUpdate, VehiclePosition)

@@ -40,6 +40,6 @@
       "request": "launch",
       "program": "${workspaceFolder}/uvicorn app.main:app --reload",
       "console": "integratedTerminal"
-    }
+    },
   ]
 }

@@ -1,7 +1,22 @@
-from typing import Optional
+from typing import Optional,get_type_hints, Type
 from pydantic import BaseModel, Json, ValidationError,validator
 
 from .config import Config
+
+from enum import Enum
+
+def create_model_fields_enum(model: Type[BaseModel]) -> Type[Enum]:
+    # Create a new Enum class
+    class ModelFieldsEnum(str, Enum):
+        # Get the field names from the model
+        fields = {f: f for f in get_type_hints(model).keys()}
+
+        # Create an Enum member for each field
+        for field in fields:
+            locals()[field] = field
+
+    # Return the new Enum class
+    return ModelFieldsEnum
 
 class Agency(BaseModel):
     agency_id: str
@@ -248,3 +263,4 @@ class User(UserBase):
 
 class UserInDB(User):
     hashed_password: str
+
