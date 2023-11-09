@@ -49,7 +49,8 @@ from shapely.wkb import loads
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.decl_api import DeclarativeMeta
-from . import redis
+
+redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
 # import sqlalchemy
 
 def asdict(obj):
