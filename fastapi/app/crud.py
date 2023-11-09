@@ -40,6 +40,7 @@ import aioredis
 import pickle
 
 from sqlalchemy import select
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Type, Optional
 
@@ -49,8 +50,7 @@ from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
-redis = aioredis.from_url("redis://redis:6379", decode_responses=True, encoding='utf-8', socket_connect_timeout=5)
-
+redis = aioredis.from_url("redis://redis:6379", socket_connect_timeout=5)
 # import sqlalchemy
 
 def asdict(obj):
@@ -117,30 +117,56 @@ async def get_vehicle_data_async(db: AsyncSession, agency_id: str, vehicle_id: s
     data = result.scalars().one_or_none()
     return data
 
-async def get_data_async(async_session: Session, model: Type[BaseModel], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None):
+import pickle
+
+async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None):
+    # Create a unique key for this query
+    key = f"{model.__name__}:{agency_id}:{field_name}:{field_value}"
+
+    # Try to get the result from Redis
+    result = await redis.get(key)
+    if result is not None:
+        data = pickle.loads(result)
+        if isinstance(data, model):
+            # If the data is a SQLAlchemy model instance, convert it to a dict
+            data = {c.key: getattr(data, c.key) for c in sqlalchemy.inspect(data).mapper.column_attrs}
+        return data
+
     if field_name and field_value:
         stmt = select(model).where(getattr(model, field_name) == field_value, getattr(model, 'agency_id') == agency_id)
     else:
         stmt = select(model).where(getattr(model, 'agency_id') == agency_id)
     result = await async_session.execute(stmt)
     data = result.scalars().all()
-    return [item.to_dict() for item in data]  # Convert to dictionaries here
-
+    return [item.to_dict() for item in data]
+    
 async def get_all_data_async(async_session: Session, model: Type[BaseModel], agency_id: str):
     data = await get_data_async(async_session, model, agency_id)
     return data
 
 
-async def get_list_data_async(db: AsyncSession, model: Type[DeclarativeMeta], agency_id: str):
-    stmt = select(model.vehicle_id).where(model.agency_id == agency_id).distinct()
+async def get_list_data_async(db: Session, model: Type[DeclarativeMeta], field: str, agency_id: str):
+    stmt = select(getattr(model, field)).where(model.agency_id == agency_id).distinct()
     result = await db.execute(stmt)
     data = result.scalars().all()
     return data
+
+import logging
 
 async def get_list_of_unique_values_async(session: AsyncSession, model, agency_id: str, field_name: str):
     """
     Get a list of unique values for a specific field in a model.
     """
+    # Create a unique key for this query
+    key = f"{model.__name__}:{agency_id}:{field_name}:unique_values"
+    logging.info(f"Generated key: {key}")
+
+    # Try to get the result from Redis
+    result = await redis.get(key)
+    if result is not None:
+        logging.info("Found result in Redis")
+        return pickle.loads(result)
+
     # Use reflection to get the field from the model
     field = getattr(model, field_name, None)
     if field is None:
@@ -155,6 +181,11 @@ async def get_list_of_unique_values_async(session: AsyncSession, model, agency_i
     for row in result:
         if row[0] is not None and row[0] not in unique_values:
             unique_values.append(row[0])
+
+    logging.info(f"Unique values from database: {unique_values}")
+
+    # Store the result in Redis
+    await redis.set(key, pickle.dumps(unique_values))
 
     return unique_values
 
@@ -295,7 +326,7 @@ async def get_all_gtfs_rt_vehicle_positions(db, agency_id: str, geojson: bool):
         if cached_result is not None:
             return pickle.loads(cached_result)
 
-        the_query = db.query(models.VehiclePosition).filter(models.VehiclePositions.agency_id == agency_id)
+        the_query = db.query(models.VehiclePositions).filter(models.VehiclePositions.agency_id == agency_id)
         all_rows = await get_all_data(the_query)  # Use the utility function here
 
         result = []
@@ -326,8 +357,8 @@ async def get_all_gtfs_rt_vehicle_positions(db, agency_id: str, geojson: bool):
 
 def get_gtfs_rt_vehicle_positions_by_field_name(db, field_name: str,field_value: str,geojson:bool,agency_id: str):
     if field_value is None:
-        the_query = db.query(models.VehiclePosition).filter(models.VehiclePositions.agency_id == agency_id).all()
-    the_query = db.query(models.VehiclePosition).filter(getattr(models.VehiclePosition,field_name) == field_value,models.VehiclePositions.agency_id == agency_id).all()
+        the_query = db.query(models.VehiclePositions).filter(models.VehiclePositions.agency_id == agency_id).all()
+    the_query = db.query(models.VehiclePositions).filter(getattr(models.VehiclePositions,field_name) == field_value,models.VehiclePositions.agency_id == agency_id).all()
     result = []
     if geojson == True:
         this_json = {}
@@ -348,7 +379,7 @@ def get_gtfs_rt_vehicle_positions_by_field_name(db, field_name: str,field_value:
 
 def _async(db, agency_id: str, geojson: bool):
     # Query the database for vehicle positions
-    vehicle_positions = db.query(models.VehiclePosition).filter(
+    vehicle_positions = db.query(models.VehiclePositions).filter(
         models.VehiclePositions.agency_id == agency_id).all()
 
     # If geojson is True, return the data in GeoJSON format
@@ -395,50 +426,40 @@ def _async(db, agency_id: str, geojson: bool):
         return [{"message": "No Vehicle Positions available at this time"}]
 
     return result
+import pickle
+from sqlalchemy import and_
+from sqlalchemy.orm import joinedload
+async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session: AsyncSession, route_code: str, geojson:bool, agency_id:str):
+    cache_key = f'trip_data:{route_code}:{agency_id}'
+    cached_data = await redis.get(cache_key)
+    if cached_data is not None:
+        return pickle.loads(cached_data)
 
-def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(db,route_code: str, geojson:bool,agency_id:str):
-    result = []
-    the_query = db.query(models.VehiclePosition).filter(models.VehiclePositions.route_code == route_code,models.VehiclePositions.agency_id == agency_id).all()
-    if geojson == True:
-        this_json = {}
-        count = 0
-        features = []
-        for row in the_query:
-            count += 1
-            features.append(vehicle_position_reformat(row,geojson))
-        this_json['metadata'] = {'count': count}
-        this_json['metadata'] = {'title': 'Vehicle Positions'}
-        this_json['type'] = "FeatureCollection"
-        this_json['features'] = features
-        return this_json
-    for row in the_query:
-        if row.trip_id is None:
-            message_object = [{'message': 'No trip data for this vehicle id: ' + str(route_code)}]
-            return message_object
-        new_row = vehicle_position_reformat_for_trip_details(row,geojson)
-        stop_name_query = db.query(models.Stops.stop_name).filter(models.Stops.stop_id == new_row.stop_id,models.Stops.agency_id == agency_id).first()
-        new_row.stop_name = stop_name_query[0]
-        upcoming_stop_time_update_query = db.query(models.StopTimeUpdates).filter(models.StopTimeUpdates.trip_id == new_row.trip_id,models.StopTimeUpdates.stop_sequence == new_row.current_stop_sequence).first()
-        if upcoming_stop_time_update_query is not None:
-            new_row.trip_assigned = True
-            trip_details_query = db.query(models.TripUpdate).filter(models.TripUpdate.trip_id == new_row.trip_id).first()
-            new_row.direction_id = trip_details_query.direction_id
-        new_row.upcoming_stop_time_update = upcoming_stop_time_reformat(upcoming_stop_time_update_query)
-        route_code_query = db.query(models.StopTimes.route_code).filter(models.StopTimes.trip_id == new_row.trip_id,models.StopTimes.stop_sequence == new_row.current_stop_sequence).first()
-        destination_code_query = db.query(models.StopTimes.destination_code).filter(models.StopTimes.trip_id == new_row.trip_id,models.StopTimes.stop_sequence == new_row.current_stop_sequence).first()
-        new_row.route_code = route_code_query[0]
-        new_row.destination_code = destination_code_query[0]
-        result.append(new_row)
-    if result == []:
-        message_object = [{'message': 'No vehicle data for this vehicle id: ' + str(route_code)}]
-        return message_object
-    else:
-        return result
+    stmt = (
+        select(models.VehiclePositions).
+        options(
+            joinedload(models.VehiclePositions.stop_time_updates).
+            joinedload(models.StopTimeUpdates.stop),
+            joinedload(models.VehiclePositions.trip_update)
+        ).
+        filter(
+            models.VehiclePositions.route_code == route_code,
+            models.VehiclePositions.agency_id == agency_id,
+            models.VehiclePositions.current_stop_sequence == models.StopTimeUpdates.stop_sequence,
+            models.VehiclePositions.trip_id == models.StopTimeUpdates.trip_id,
+            models.VehiclePositions.trip_id == models.TripUpdates.trip_id
+        )
+    )
 
+    result = await session.execute(stmt)
+    vehicle_positions = result.scalars().all()
 
+    if geojson:
+        return convert_to_geojson(vehicle_positions)
 
+    return vehicle_positions
 async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session,route_code: str, geojson:bool,agency_id:str):
-    the_query = await session.execute(select(models.VehiclePosition).where(models.VehiclePositions.route_code == route_code,models.VehiclePositions.agency_id == agency_id).order_by(models.VehiclePositions.route_code))
+    the_query = await session.execute(select(models.VehiclePositions).where(models.VehiclePositions.route_code == route_code,models.VehiclePositions.agency_id == agency_id).order_by(models.VehiclePositions.route_code))
     if geojson == True:
         this_json = {}
         count = 0
@@ -563,7 +584,7 @@ async def get_gtfs_rt_vehicle_positions_trip_data_redis(db, vehicle_id: str):
     
     if data is None:
         # If data is not in Redis, get it from the database
-        result = db.query(models.VehiclePosition).filter(models.VehiclePositions.vehicle_id == vehicle_id).all()
+        result = db.query(models.VehiclePositions).filter(models.VehiclePositions.vehicle_id == vehicle_id).all()
         
         if not result:
             return None
@@ -583,7 +604,7 @@ async def get_gtfs_rt_vehicle_positions_trip_data(db, vehicle_id: str, geojson: 
         return pickle.loads(result)
 
     result = []
-    the_query = db.query(models.VehiclePosition).filter(models.VehiclePositions.vehicle_id == vehicle_id,models.VehiclePositions.agency_id == agency_id).all()
+    the_query = db.query(models.VehiclePositions).filter(models.VehiclePositions.vehicle_id == vehicle_id,models.VehiclePositions.agency_id == agency_id).all()
     if geojson == True:
         this_json = {}
         count = 0
@@ -770,6 +791,29 @@ def get_routes_by_route_id(db,route_id,agency_id):
         the_query = db.query(models.Routes).filter(models.Routes.route_id == route_id,models.Routes.agency_id == agency_id).all()
         return the_query
 
+async def get_route_overview_by_route_code_async(db, agency_id, route_code=None):
+    if route_code is None or route_code.lower() == 'all':
+        the_query = await db.query(models.RouteOverview).order_by(models.RouteOverview.route_code_padded).all()
+        agency_schedule_data = {}
+        for row in the_query:
+            if row.agency_id in agency_schedule_data:
+                agency_schedule_data[row.agency_id].append(row)
+            else:
+                agency_schedule_data[row.agency_id] = [row]
+        return agency_schedule_data
+    elif route_code == 'list':
+        the_query = await db.query(models.RouteOverview).filter(models.RouteOverview.agency_id == agency_id).distinct(models.RouteOverview.route_code).all()
+        result = []
+        for row in the_query:
+            result.append(row.route_code)
+        return result    
+    else:
+        the_query = await db.query(models.RouteOverview).filter(models.RouteOverview.route_code == route_code,models.RouteOverview.agency_id == agency_id).all()
+        if the_query:
+            return the_query
+        else:
+            error_message = {'error': 'No route found for route code: ' + route_code}
+            return error_message
 
 def get_route_overview_by_route_code(db,route_code,agency_id):
     if agency_id.lower() == 'all':

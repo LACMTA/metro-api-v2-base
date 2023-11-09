@@ -1,6 +1,6 @@
 # import data modules
 from distutils.command.config import config
-from typing import Annotated
+from typing import Annotated, Union, List
 from versiontag import get_version
 
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 from datetime import timedelta, date, datetime
 
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Query
+from fastapi import Path as FastAPIPath
 # from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse,PlainTextResponse
@@ -27,10 +28,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 
-from sqlalchemy import false, distinct
+from sqlalchemy import false, distinct, inspect
 from sqlalchemy.orm import aliased
 
 from sqlalchemy.future import select
+from sqlalchemy.exc import SQLAlchemyError
 
 
 from pydantic import BaseModel, Json, ValidationError
@@ -127,7 +129,7 @@ class AgencyIdEnum(str, Enum):
     LACMTA = "LACMTA"
     LACMTA_Rail = "LACMTA_Rail"
 
-class AllAgencyIdEnum(str, Enum):
+class AllAgencyIdEnum(Enum):
     LACMTA = "LACMTA"
     LACMTA_Rail = "LACMTA_Rail"
     all = "all"
@@ -188,8 +190,15 @@ tags_metadata = [
     {"name": "User Methods", "description": "Methods for user authentication and authorization."},
 ]
 
-models.Base.metadata.create_all(bind=engine)
+inspector = inspect(engine)
 
+
+try:
+    for table_name in models.Base.metadata.tables.keys():
+        if not engine.dialect.has_table(engine, table_name):
+            models.Base.metadata.tables[table_name].create(bind=engine)
+except SQLAlchemyError as e:
+    print(f"An error occurred while creating the tables: {e}")
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
 # db = connect(host='', port=0, timeout=None, source_address=None)
 
@@ -276,6 +285,7 @@ def get_columns_from_schema(schema):
     if schema == 'vehicle_position_updates':
         return schemas.VehiclePositions.__fields__.keys()
 
+
 def standardize_string(input_string):
     return input_string.lower().replace(" ", "")
 
@@ -286,7 +296,7 @@ def standardize_string(input_string):
 #### Begin GTFS-RT Routes ####
 
 @app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])     
-async def get_all_trip_updates(agency_id: AgencyIdEnum, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
+async def get_all_trip_updates(agency_id: AgencyIdEnum, async_db: AsyncSession = Depends(get_async_db)):
     """
     Get all trip updates.
     """
@@ -294,9 +304,6 @@ async def get_all_trip_updates(agency_id: AgencyIdEnum, format: FormatEnum = Que
     data = await crud.get_all_data_async(async_db, model, agency_id.value)
     if data is None:
         raise HTTPException(status_code=404, detail="Data not found")
-    if format == FormatEnum.geojson:
-        # Convert data to GeoJSON format
-        data = to_geojson(data)
     return data
 
 @app.get("/{agency_id}/trip_updates/{field}/{ids}", tags=["Real-Time data"])     
@@ -377,15 +384,12 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositi
 ##### todo: Needs to be tested
 
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
-async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False,db: Session = Depends(get_db)):
-    result = crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(db,route_code,geojson,agency_id.value)
-    # crud.get_gtfs_rt_vehicle_positions_by_field_name(db,vehicle_id,geojson,agency_id.value)
+async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: AsyncSession = Depends(get_db)):
+    result = await crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value)
     return result
 
-
-
 @app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id?}", tags=["Real-Time data"])
-async def get_trip_detail_by_vehicle(agency_id: str, vehicle_id: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
+async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
     if operation == OperationEnum.ALL:
         result = await crud.get_all_data_async(async_db, models.VehiclePositions, operation.value)
         return result
@@ -407,7 +411,7 @@ async def get_trip_detail_by_vehicle(agency_id: str, vehicle_id: Optional[str] =
 
 
 @app.get("/{agency_id}/trip_detail/route/{route_code?}", tags=["Real-Time data"])
-async def get_trip_detail_by_route(agency_id: str, route_code: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
+async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
     if operation == OperationEnum.ALL:
         result = await crud.get_all_data_async(async_db, models.VehiclePositions, operation.value)
         return result
@@ -546,10 +550,44 @@ async def get_routes(agency_id: AgencyIdEnum,route_id, db: Session = Depends(get
     result = crud.get_routes_by_route_id(db,route_id,agency_id.value)
     return result
 
-### Todo: Needs to be updated to use async and redis
-@app.get("/{agency_id}/route_overview",tags=["Static data"])
-async def get_routes(agency_id: AllAgencyIdEnum,route_code:str="", db: Session = Depends(get_db)):
-    result = crud.get_route_overview_by_route_code(db,route_code,agency_id.value)
+@app.get("/{agency_id}/route_overview", tags=["Static data"])
+async def get_route_overview(agency_id: AllAgencyIdEnum, async_db: AsyncSession = Depends(get_async_db)):
+    """
+    Get route overview data for all routes.
+    """
+    model = models.RouteOverview
+    if agency_id == AllAgencyIdEnum.all:
+        results = []
+        for agency in AllAgencyIdEnum:
+            result = await crud.get_all_data_async(async_db, model, agency.value)
+            if result is not None:
+                results.append(result)
+        if not results:
+            raise HTTPException(status_code=404, detail="Data not found")
+        return results
+    else:
+        result = await crud.get_all_data_async(async_db, model, agency_id.value)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Data not found")
+        return result
+
+@app.get("/{agency_id}/route_overview/{route_code}", tags=["Static data"])
+async def get_route_overview_by_route_code(agency_id: AgencyIdEnum, route_code: str, async_db: AsyncSession = Depends(get_async_db)):
+    """
+    Get route overview data by route code.
+    """
+    model = models.RouteOverview
+    if route_code.lower() == 'all':
+        # Return all routes
+        result = await crud.get_all_data_async(async_db, model, agency_id.value)
+    elif route_code.lower() == 'list':
+        # Return a list of route codes
+        result = await crud.get_list_of_unique_values_async(async_db, model, 'route_code', agency_id.value)
+    else:
+        # Return data for a specific route code
+        result = await crud.get_data_async(async_db, model, agency_id.value, 'route_code', route_code)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}")
     return result
 
 @app.get("/{agency_id}/agency/",tags=["Static data"])
@@ -666,6 +704,7 @@ async def get_all_routes():
 @app.on_event("startup")
 async def startup_event():
     app.state.redis = await aioredis.from_url('redis://redis:6379')
+    await app.state.redis.flushdb()  # Add this line to flush the Redis database
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_error_logger = logging.getLogger("uvicorn.error")
     logger = logging.getLogger("uvicorn.app")
