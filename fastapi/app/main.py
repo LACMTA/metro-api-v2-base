@@ -1,6 +1,6 @@
 # import data modules
 from distutils.command.config import config
-from typing import Annotated, Union, List
+from typing import Union, List, Dict, Optional
 from versiontag import get_version
 
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -15,7 +15,6 @@ import aioredis
 
 import pytz
 
-from typing import Dict, List, Optional
 
 from datetime import timedelta, date, datetime
 
@@ -79,9 +78,21 @@ Page = Page.with_custom_options(
     size=Query(100, ge=1, le=500),
 )
 
-# Create a Redis connection pool
-redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+# Define the redis variable at the top level
+redis = None
 
+def initialize_redis():
+    global redis
+    for i in range(5):  # Retry up to 5 times
+        try:
+            redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+            break  # If the connection is successful, break out of the loop
+        except aioredis.exceptions.ConnectionError:
+            if i < 4:  # If this was not the last attempt, wait a bit before retrying
+                time.sleep(5)  # Wait for 5 seconds
+            else:  # If this was the last attempt, re-raise the exception
+                raise
+            
 async def get_data(db: Session, key: str, fetch_func):
     # Get data from Redis
     data = await redis.get(key)
