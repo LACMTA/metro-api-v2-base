@@ -30,7 +30,6 @@ from fastapi.templating import Jinja2Templates
 
 from sqlalchemy import false, distinct, inspect
 from sqlalchemy.orm import aliased
-
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -81,7 +80,7 @@ Page = Page.with_custom_options(
 )
 
 # Create a Redis connection pool
-redis = aioredis.from_url("redis://localhost:6379", decode_responses=True, encoding='utf-8', socket_connect_timeout=5)
+redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
 
 async def get_data(db: Session, key: str, fetch_func):
     # Get data from Redis
@@ -192,15 +191,15 @@ tags_metadata = [
 
 inspector = inspect(engine)
 
-
 try:
     for table_name in models.Base.metadata.tables.keys():
-        if not engine.dialect.has_table(engine, table_name):
+        if not inspector.has_table(table_name):
             models.Base.metadata.tables[table_name].create(bind=engine)
 except SQLAlchemyError as e:
     print(f"An error occurred while creating the tables: {e}")
+
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
-# db = connect(host='', port=0, timeout=None, source_address=None)
+# db = connect(host=''ort=0, timeout=None, source_address=None)
 
 instrumentator = Instrumentator().instrument(app)
 Instrumentator().instrument(app, metric_namespace='metro-api', metric_subsystem='metro-api').expose(app)
@@ -703,7 +702,7 @@ async def get_all_routes():
 
 @app.on_event("startup")
 async def startup_event():
-    app.state.redis = await aioredis.from_url('redis://redis:6379')
+    app.state.redis = await aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
     await app.state.redis.flushdb()  # Add this line to flush the Redis database
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_error_logger = logging.getLogger("uvicorn.error")

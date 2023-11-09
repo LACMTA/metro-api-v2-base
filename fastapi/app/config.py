@@ -44,7 +44,7 @@ def get_version_tag_from_online_github_repo():
 
 class Config:
     BASE_URL = "https://api.metro.net"
-    REDIS_URL = "redis://redis:6379"
+    REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
     TARGET_DB_SCHEMA = "metro_api"
     API_DB_URI = os.environ.get('API_DB_URI')
     SECRET_KEY = os.environ.get('HASH_KEY')
