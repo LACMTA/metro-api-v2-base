@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.3
-FROM python:3.9-slim-buster
+FROM lacmta/geodb-base
 
 WORKDIR /app
 
