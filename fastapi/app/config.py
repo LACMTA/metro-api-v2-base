@@ -41,11 +41,19 @@ def get_version_tag_from_online_github_repo():
     except Exception as e:
         logging.info('Error getting version tag from github: ' + str(e))
         return '0.0.error '+ str(e)
-
+def set_db_schema():
+    try:
+        current_environment = os.environ.get('RUNNING_ENV')
+        if current_environment == 'prod':
+            return 'metro_api'
+        else:
+            return 'metro_api_dev'
+    except Exception as e:
+        print('Error setting db schema: ' + str(e))
 class Config:
     BASE_URL = "https://api.metro.net"
     REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
-    TARGET_DB_SCHEMA = "metro_api"
+    TARGET_DB_SCHEMA = set_db_schema()
     API_DB_URI = os.environ.get('API_DB_URI')
     SECRET_KEY = os.environ.get('HASH_KEY')
     ALGORITHM = os.environ.get('HASHING_ALGORITHM')
