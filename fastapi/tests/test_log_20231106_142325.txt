@@ -1,0 +1,79 @@
+============================= test session starts =============================
+platform win32 -- Python 3.8.18, pytest-7.4.0, pluggy-1.0.0 -- C:\Users\etria\miniconda3\envs\metrotests\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\etria\repos\metro\metro-api-v2\tests
+plugins: anyio-3.7.1
+collecting ... collected 6 items
+
+test_main.py::test_get_all_trip_updates FAILED                           [ 16%]
+test_main.py::test_get_trip_updates_by_ids FAILED                        [ 33%]
+test_main.py::test_get_list_of_field_values FAILED                       [ 50%]
+test_main.py::test_get_all_vehicle_positions FAILED                      [ 66%]
+test_main.py::test_get_vehicle_positions_by_ids FAILED                   [ 83%]
+test_main.py::test_get_list_of_vehicle_field_values FAILED               [100%]
+
+================================== FAILURES ===================================
+__________________________ test_get_all_trip_updates __________________________
+
+    def test_get_all_trip_updates():
+        response = requests.get("http://localhost:80/agency_id/trip_updates")
+>       assert response.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422]>.status_code
+
+test_main.py:6: AssertionError
+________________________ test_get_trip_updates_by_ids _________________________
+
+    def test_get_trip_updates_by_ids():
+        response = requests.get("http://localhost:80/agency_id/trip_updates/field/ids")
+>       assert response.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422]>.status_code
+
+test_main.py:10: AssertionError
+________________________ test_get_list_of_field_values ________________________
+
+    def test_get_list_of_field_values():
+        response = requests.get("http://localhost:80/agency_id/trip_updates/field")
+>       assert response.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422]>.status_code
+
+test_main.py:14: AssertionError
+_______________________ test_get_all_vehicle_positions ________________________
+
+    def test_get_all_vehicle_positions():
+        response = requests.get("http://localhost:80/agency_id/vehicle_positions")
+>       assert response.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422]>.status_code
+
+test_main.py:18: AssertionError
+______________________ test_get_vehicle_positions_by_ids ______________________
+
+    def test_get_vehicle_positions_by_ids():
+        response = requests.get("http://localhost:80/agency_id/vehicle_positions/field/ids")
+>       assert response.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422]>.status_code
+
+test_main.py:22: AssertionError
+____________________ test_get_list_of_vehicle_field_values ____________________
+
+    def test_get_list_of_vehicle_field_values():
+        response = requests.get("http://localhost:80/agency_id/vehicle_positions/field")
+>       assert response.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422]>.status_code
+
+test_main.py:26: AssertionError
+=========================== short test summary info ===========================
+FAILED test_main.py::test_get_all_trip_updates - assert 422 == 200
+FAILED test_main.py::test_get_trip_updates_by_ids - assert 422 == 200
+FAILED test_main.py::test_get_list_of_field_values - assert 422 == 200
+FAILED test_main.py::test_get_all_vehicle_positions - assert 422 == 200
+FAILED test_main.py::test_get_vehicle_positions_by_ids - assert 422 == 200
+FAILED test_main.py::test_get_list_of_vehicle_field_values - assert 422 == 200
+============================== 6 failed in 1.18s ==============================
+Running unit tests...
+Unit tests check has failed

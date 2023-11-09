@@ -1,0 +1,4 @@
+locust==1.4.4
+pytest
+fastapi
+httpx

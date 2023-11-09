@@ -270,25 +270,23 @@ def upcoming_stop_time_reformat_for_async(stop_time_update):
         #             new_stop_time_object['stop_sequence'] = row['stop_sequence']
         #             return new_stop_time_object
             
-
-
-def upcoming_stop_time_reformat(stop_time_update):
-    if stop_time_update != None:
-        if stop_time_update.trip_updates != None:
-            sanitized_stop_time_json = stop_time_update.trip_updates.stop_time_json.replace("'", '"')
-            update_json = json.loads(sanitized_stop_time_json)
-            for row in update_json:
-                new_stop_time_object = {}
-                if row['stop_sequence'] == stop_time_update.stop_sequence:
-                    if row['arrival']:
-                        new_stop_time_object['arrival'] = row['arrival']
-                    if row['departure']:
-                        new_stop_time_object['departure'] = row['departure']
-                    new_stop_time_object['schedule_relationship'] = get_readable_schedule_relationship(row['schedule_relationship'])
-                    new_stop_time_object['stop_id'] = row['stop_id']
-                    new_stop_time_object['stop_sequence'] = row['stop_sequence']
-                    return new_stop_time_object
-            
+def upcoming_stop_time_reformat(stop_time_update_query):
+    for stop_time_update in stop_time_update_query.scalars():
+        if stop_time_update != None:
+            if stop_time_update.trip_updates != None:
+                sanitized_stop_time_json = stop_time_update.trip_updates.stop_time_json.replace("'", '"')
+                update_json = json.loads(sanitized_stop_time_json)
+                for row in update_json:
+                    new_stop_time_object = {}
+                    if row['stop_sequence'] == stop_time_update.stop_sequence:
+                        if row['arrival']:
+                            new_stop_time_object['arrival'] = row['arrival']
+                        if row['departure']:
+                            new_stop_time_object['departure'] = row['departure']
+                        new_stop_time_object['schedule_relationship'] = get_readable_schedule_relationship(row['schedule_relationship'])
+                        new_stop_time_object['stop_id'] = row['stop_id']
+                        new_stop_time_object['stop_sequence'] = row['stop_sequence']
+                        return new_stop_time_object
 def get_readable_status(status):
     if status == 0:
         return 'INCOMING_AT'

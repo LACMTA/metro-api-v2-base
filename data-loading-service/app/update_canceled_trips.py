@@ -15,6 +15,15 @@ LOCALPATH = os.path.realpath(TARGET_PATH)
 # ftp_json_file_time = ''
 
 
+from sqlalchemy import inspect
+
+inspector = inspect(engine)
+tables = inspector.get_table_names()
+if "canceled_service" in tables:
+    canceled_data_frame_from_database = pd.read_sql_query('select * from "canceled_service"',con=engine)
+else:
+    canceled_data_frame_from_database = pd.DataFrame()
+
 def run_update():
     try:
         # logger.info('pulling CancelledTripsRT.json from FTP')

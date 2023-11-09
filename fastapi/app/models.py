@@ -1,4 +1,6 @@
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON
+from sqlalchemy.orm import class_mapper
+
 from geoalchemy2 import *
 from geoalchemy2.shape import to_shape
 from geoalchemy2.elements import WKBElement
@@ -118,7 +120,8 @@ class RouteOverview(Base):
     pdf_file_url = Column(String)
     pdf_file_link = Column(String)
     iconography_url = Column(String)
-
+    def to_dict(self):
+        return {c.key: getattr(self, c.key) for c in class_mapper(self.__class__).columns}
 # route stops: route_id,stop_id,day_type,stop_sequence,direction_id,stop_name,coordinates,departure_times
 class RouteStops(Base):
     __tablename__ = "route_stops"
@@ -286,9 +289,13 @@ class StopTimeUpdates(BaseModel):
     start_date = Column(String)
     direction_id = Column(Integer)
 
+    vehicle_id = Column(String)
+    vehicle_positions = relationship("VehiclePositions", back_populates="stop_time_updates", 
+                                     primaryjoin="StopTimeUpdates.vehicle_id == VehiclePositions.vehicle_id")
+
     # TODO: Add domain
     schedule_relationship = Column(Integer)
-    
+    stop_time_updates = relationship("StopTimeUpdates", back_populates="vehicle_positions")
     # Link it to the TripUpdate
     # trip_id = Column(Integer,)
 
@@ -316,11 +323,15 @@ class VehiclePositions(BaseModel):
     geometry = Column(Geometry('POINT', srid=4326))
 
     # collapsed Vehicle.Vehicle
-    vehicle_id = Column(String,primary_key=True,index=True)
+    vehicle_id = Column(String, primary_key=True)
+    stop_time_updates = relationship("StopTimeUpdates", back_populates="vehicle_positions", 
+                                     primaryjoin="VehiclePositions.vehicle_id == StopTimeUpdates.vehicle_id")
     vehicle_label = Column(String)
 
     agency_id = Column(String)
     timestamp = Column(Integer)
+    stop_time_updates = relationship("StopTimeUpdates", back_populates="vehicle_positions")
+
 # So one can loop over all classes to clear them for a new load (-o option)
 GTFSRTSqlAlchemyModels = {
     schemas.TripUpdates: TripUpdates,
