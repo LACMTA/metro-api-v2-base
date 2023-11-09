@@ -32,6 +32,7 @@ from sqlalchemy import false, distinct, inspect
 from sqlalchemy.orm import aliased
 
 from sqlalchemy.future import select
+from sqlalchemy.exc import SQLAlchemyError
 
 
 from pydantic import BaseModel, Json, ValidationError
@@ -191,10 +192,13 @@ tags_metadata = [
 
 inspector = inspect(engine)
 
-if "canceled_service" not in inspector.get_table_names():
-    models.Base.metadata.tables['canceled_service'].create(bind=engine)
-models.Base.metadata.create_all(bind=engine)
 
+try:
+    for table_name in models.Base.metadata.tables.keys():
+        if not engine.dialect.has_table(engine, table_name):
+            models.Base.metadata.tables[table_name].create(bind=engine)
+except SQLAlchemyError as e:
+    print(f"An error occurred while creating the tables: {e}")
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
 # db = connect(host='', port=0, timeout=None, source_address=None)
 
