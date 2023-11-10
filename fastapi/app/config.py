@@ -52,7 +52,8 @@ def set_db_schema():
         print('Error setting db schema: ' + str(e))
 class Config:
     BASE_URL = "https://api.metro.net"
-    REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
+    MEMCACHED_HOST = os.environ.get('MEMCACHED_HOST', 'memcached')
+    MEMCACHED_PORT = os.environ.get('MEMCACHED_PORT', '11211')
     TARGET_DB_SCHEMA = set_db_schema()
     API_DB_URI = os.environ.get('API_DB_URI')
     SECRET_KEY = os.environ.get('HASH_KEY')

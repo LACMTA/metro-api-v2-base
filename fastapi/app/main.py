@@ -3,15 +3,12 @@ from distutils.command.config import config
 from typing import Union, List, Dict, Optional
 from versiontag import get_version
 
-from prometheus_fastapi_instrumentator import Instrumentator
-
 import http
 import json
 import requests
 import csv
 import os
 import asyncio
-import aioredis
 
 import pytz
 
@@ -41,12 +38,10 @@ import yaml
 from starlette.middleware.cors import CORSMiddleware
 
 # from fastapi_cache import FastAPICache
-# from fastapi_cache.backends.redis import RedisBackend
 # from fastapi_cache.decorator import cache
 from starlette.requests import Request
 from starlette.responses import Response
 
-# from redis import asyncio as aioredis
 from enum import Enum
 
 # for OAuth2
@@ -71,40 +66,26 @@ from logzio.handler import LogzioHandler
 import logging
 import typing as t
 
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Histogram
+from pymemcache.client.base import Client
 
 ### Pagination Parameter Options (deafult pagination count, default starting page, max_limit)
 Page = Page.with_custom_options(
     size=Query(100, ge=1, le=500),
 )
 
-# Define the redis variable at the top level
-redis = None
-
-def initialize_redis():
-    global redis
-    logging.info(f"Connecting to Redis at {Config.REDIS_URL}")
-    for i in range(5):  # Retry up to 5 times
-        try:
-            redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
-            break  # If the connection is successful, break out of the loop
-        except aioredis.exceptions.ConnectionError as e:
-            logging.error(f"Failed to connect to Redis: {e}")
-            if i < 4:  # If this was not the last attempt, wait a bit before retrying
-                time.sleep(5)  # Wait for 5 seconds
-            else:  # If this was the last attempt, re-raise the exception
-                raise
+# Create a Memcached client
+client = Client((Config.MEMCACHED_HOST, int(Config.MEMCACHED_PORT)))
 
 async def get_data(db: Session, key: str, fetch_func):
-    # Get data from Redis
-    data = await redis.get(key)
+    # Get data from Memcached
+    data = client.get(key)
     if data is None:
-        # If data is not in Redis, get it from the database
+        # If data is not in Memcached, get it from the database
         data = fetch_func(db, key)
         if data is None:
             return None
-        # Set data in Redis
-        await redis.set(key, data)
+        # Set data in Memcached
+        client.set(key, data)
     return data
 
 
@@ -216,11 +197,6 @@ except SQLAlchemyError as e:
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
 # db = connect(host=''ort=0, timeout=None, source_address=None)
 
-instrumentator = Instrumentator().instrument(app)
-Instrumentator().instrument(app, metric_namespace='metro-api', metric_subsystem='metro-api').expose(app)
-
-# Create a metric to track time spent and requests made.
-REQUEST_TIME = Histogram('request_processing_seconds', 'Time spent processing request')
 
 
 @app.exception_handler(Exception)
@@ -717,9 +693,6 @@ async def get_all_routes():
 
 @app.on_event("startup")
 async def startup_event():
-    initialize_redis()
-    app.state.redis = await aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
-    # await app.state.redis.flushdb()  # Add this line to flush the Redis database
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_error_logger = logging.getLogger("uvicorn.error")
     logger = logging.getLogger("uvicorn.app")
@@ -754,7 +727,3 @@ app.add_middleware(
     expose_headers=["*"],
 )
 add_pagination(app)
-# @app.on_event("startup")
-# async def startup_redis():
-    # redis =  aioredis.from_url("redis://localhost", encoding="utf8", decode_responses=True,port=6379)
-#     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
