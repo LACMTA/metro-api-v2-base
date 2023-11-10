@@ -26,9 +26,8 @@ websockets
 redis_om
 # fastapi-redis-cache
 # fastapi-cache2[redis]
-aioredis
+pymemcache
 asyncio
-asyncpg
 sqlalchemy[asyncio]
 versiontag
 gitpython

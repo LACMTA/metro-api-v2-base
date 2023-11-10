@@ -24,7 +24,8 @@ pandas
 polyline
 websockets
 fastapi-cache2[redis]
-aioredis
+
+pymemcache
 asyncio
 asyncpg
 sqlalchemy[asyncio]
