@@ -275,9 +275,6 @@ class TripUpdates(BaseModel):
 
 class StopTimeUpdates(BaseModel):
     __tablename__ = 'stop_time_updates'
-    # oid = Column(Integer, )
-
-    # TODO: Fill one from the other
     stop_sequence = Column(Integer)
     stop_id = Column(String(10),primary_key=True,index=True)
     trip_id = Column(String, ForeignKey('trip_updates.trip_id'))
@@ -288,50 +285,28 @@ class StopTimeUpdates(BaseModel):
     start_time = Column(String)
     start_date = Column(String)
     direction_id = Column(Integer)
-
     vehicle_id = Column(String)
-    vehicle_positions = relationship("VehiclePositions", back_populates="stop_time_updates", 
-                                     primaryjoin="StopTimeUpdates.vehicle_id == VehiclePositions.vehicle_id")
-
-    # TODO: Add domain
     schedule_relationship = Column(Integer)
-    stop_time_updates = relationship("StopTimeUpdates", back_populates="vehicle_positions")
-    # Link it to the TripUpdate
-    # trip_id = Column(Integer,)
 
 class VehiclePositions(BaseModel):
     __tablename__ = "vehicle_position_updates"
-
-    # Vehicle information
     current_stop_sequence = Column(Integer)
     current_status = Column(String)
     timestamp = Column(Integer)
     stop_id = Column(String)
-
-    # Collapsed Vehicle.trip
     trip_id = Column(String)
     trip_start_date = Column(String)
     trip_route_id = Column(String)
-    # trip_direction_id = Column(Integer)
     route_code = Column(String)
-    
-    # Collapsed Vehicle.Position
     position_latitude = Column(Float)
     position_longitude = Column(Float)
     position_bearing = Column(Float)
     position_speed = Column(Float)
     geometry = Column(Geometry('POINT', srid=4326))
-
-    # collapsed Vehicle.Vehicle
     vehicle_id = Column(String, primary_key=True)
-    stop_time_updates = relationship("StopTimeUpdates", back_populates="vehicle_positions", 
-                                     primaryjoin="VehiclePositions.vehicle_id == StopTimeUpdates.vehicle_id")
     vehicle_label = Column(String)
-
     agency_id = Column(String)
     timestamp = Column(Integer)
-    stop_time_updates = relationship("StopTimeUpdates", back_populates="vehicle_positions")
-
 # So one can loop over all classes to clear them for a new load (-o option)
 GTFSRTSqlAlchemyModels = {
     schemas.TripUpdates: TripUpdates,
