@@ -83,16 +83,18 @@ redis = None
 
 def initialize_redis():
     global redis
+    logging.info(f"Connecting to Redis at {Config.REDIS_URL}")
     for i in range(5):  # Retry up to 5 times
         try:
             redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
             break  # If the connection is successful, break out of the loop
-        except aioredis.exceptions.ConnectionError:
+        except aioredis.exceptions.ConnectionError as e:
+            logging.error(f"Failed to connect to Redis: {e}")
             if i < 4:  # If this was not the last attempt, wait a bit before retrying
                 time.sleep(5)  # Wait for 5 seconds
             else:  # If this was the last attempt, re-raise the exception
                 raise
-            
+
 async def get_data(db: Session, key: str, fetch_func):
     # Get data from Redis
     data = await redis.get(key)
@@ -715,8 +717,9 @@ async def get_all_routes():
 
 @app.on_event("startup")
 async def startup_event():
+    initialize_redis()
     app.state.redis = await aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
-    await app.state.redis.flushdb()  # Add this line to flush the Redis database
+    # await app.state.redis.flushdb()  # Add this line to flush the Redis database
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_error_logger = logging.getLogger("uvicorn.error")
     logger = logging.getLogger("uvicorn.app")
@@ -741,10 +744,6 @@ async def startup_event():
     uvicorn_error_logger.addFilter(LogFilter())
     logger.addFilter(LogFilter())
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    app.state.redis.close()
-    await app.state.redis.wait_closed()
 
 app.add_middleware(
     CORSMiddleware,
