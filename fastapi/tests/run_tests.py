@@ -6,7 +6,7 @@ def run_tests():
     log_file_name = f'test_log_{timestamp}.txt'
     with open(log_file_name, 'w') as f:
         print("Running unit tests...", file=f)
-        result = subprocess.run(["pytest", "-v", "test_main.py"], stdout=f, text=True)
+        result = subprocess.run(["pytest", "-v", "test_endpoints.py"], stdout=f, text=True)
         if result.returncode == 0:
             print("Unit tests check has passed", file=f)
         else:
