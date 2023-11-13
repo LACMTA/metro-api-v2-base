@@ -2,7 +2,7 @@
 from distutils.command.config import config
 from typing import Union, List, Dict, Optional
 from versiontag import get_version
-
+import queue
 import http
 import json
 import requests
@@ -62,7 +62,11 @@ from . import crud, models, security, schemas
 from .config import Config
 from pathlib import Path
 
+from pythonjsonlogger import jsonlogger
+import logging.handlers
+
 from logzio.handler import LogzioHandler
+
 import logging
 import typing as t
 
@@ -684,12 +688,16 @@ def read_user(username: str, db: Session = Depends(get_db),token: str = Depends(
 async def get_all_routes():
     return [route.path for route in app.routes]
 
+
+
 @app.on_event("startup")
 async def startup_event():
+    log_queue = queue.Queue(-1)
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_error_logger = logging.getLogger("uvicorn.error")
     logger = logging.getLogger("uvicorn.app")
-    logzio_formatter = logging.Formatter("%(message)s")
+
+    logzio_formatter = jsonlogger.JsonFormatter("%(message)s")
     logzio_uvicorn_access_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.access', 5, Config.LOGZIO_URL)
     logzio_uvicorn_access_handler.setLevel(logging.INFO)
     logzio_uvicorn_access_handler.setFormatter(logzio_formatter)
@@ -702,14 +710,18 @@ async def startup_event():
     logzio_app_handler.setLevel(logging.INFO)
     logzio_app_handler.setFormatter(logzio_formatter)
 
-    uvicorn_access_logger.addHandler(logzio_uvicorn_access_handler)
-    uvicorn_error_logger.addHandler(logzio_uvicorn_error_handler)
-    logger.addHandler(logzio_app_handler)
+    uvicorn_access_logger.addHandler(logging.handlers.QueueHandler(log_queue))
+    uvicorn_error_logger.addHandler(logging.handlers.QueueHandler(log_queue))
+    logger.addHandler(logging.handlers.QueueHandler(log_queue))
 
     uvicorn_access_logger.addFilter(LogFilter())
     uvicorn_error_logger.addFilter(LogFilter())
     logger.addFilter(LogFilter())
 
+    queue_listener = logging.handlers.QueueListener(
+        log_queue, logzio_uvicorn_access_handler, logzio_uvicorn_error_handler, logzio_app_handler
+    )
+    queue_listener.start()
 
 app.add_middleware(
     CORSMiddleware,
