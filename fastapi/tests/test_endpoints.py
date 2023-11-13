@@ -9,7 +9,7 @@ env = os.getenv('ENV')
 if env == 'local':
     url = 'http://localhost:80'
 elif env == 'dev':
-    url = 'https://dev-metro-api-v2.ofhq3vd1r7une.us-west-2.cs.amazonlightsail.com/'
+    url = 'https://dev-metro-api-v2.ofhq3vd1r7une.us-west-2.cs.amazonlightsail.com'
 else:
     raise ValueError("Invalid environment. Set ENV environment variable to 'local' or 'dev'")
 
