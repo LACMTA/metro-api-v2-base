@@ -24,7 +24,7 @@ pandas
 polyline
 websockets
 fastapi-cache2[redis]
-
+python-json-logger
 pymemcache
 asyncio
 asyncpg
@@ -32,8 +32,5 @@ sqlalchemy[asyncio]
 versiontag
 gitpython
 fastapi-pagination
-prometheus-fastapi-instrumentator
 geojson
-prometheus_client
 pytest
-asyncpg
