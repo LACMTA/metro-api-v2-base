@@ -46,9 +46,9 @@ We use `locust` for load testing.
 
 To run the load tests, use the following command:
 ```bash
-locust -f test_load.py -u 2000 -r 100
+locust -f load_testing.py -u 2000 -r 100
 
 ```
 
-This command will start a swarm of 2000 users, with a hatch rate of 100 users per second, using the Locust file in your tests directory.
+This command will start a swarm of 1000 users, with a hatch rate of 100 users per second, using the Locust file in your tests directory.
 

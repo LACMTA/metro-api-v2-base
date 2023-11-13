@@ -1,4 +1,4 @@
-locust==1.4.4
+locust
 pytest
 fastapi
 httpx
