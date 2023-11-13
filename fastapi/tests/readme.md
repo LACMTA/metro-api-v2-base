@@ -26,16 +26,23 @@ The tests will generate a log with naming in the following format:
 
 That has details on the number of tests failed.
 
-## Endpoint Testing
-We use `pytest` to test the endpoints and it can be run using
+## Running endpoint tests
 
-`python test_endpoints.py`
+We use a Python script with `pytest` to run the endpoint tests with different environments. To run the endpoint tests, use the following commands:
 
+### To test localhost
+
+`python test_endpoints.py --local`
+
+### To test deployed `dev`` instance
+
+`python test_endpoints.py --dev`
 
 ## Load Testing
-We use `locust` for load testing. 
 
-> Note: Ideally, you should run on a different machine that has access to the server running our fastapi application. 
+We use `locust` for load testing.
+
+> Note: Ideally, you should run on a different machine that has access to the server running our fastapi application.
 
 To run the load tests, use the following command:
 ```bash

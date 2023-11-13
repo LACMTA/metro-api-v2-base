@@ -187,13 +187,6 @@ inspector = inspect(engine)
 
 from sqlalchemy import Table
 
-try:
-    for table_name in models.Base.metadata.tables.keys():
-        table = Table(table_name, models.Base.metadata, autoload_with=engine)
-        if not table.exists(engine):
-            models.Base.metadata.tables[table_name].create(bind=engine)
-except SQLAlchemyError as e:
-    print(f"An error occurred while creating the tables: {e}")
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
 # db = connect(host=''ort=0, timeout=None, source_address=None)
 
