@@ -32,8 +32,6 @@ sqlalchemy[asyncio]
 versiontag
 gitpython
 fastapi-pagination
-prometheus-fastapi-instrumentator
-prometheus_client
 geojson
 pytest
 asyncpg

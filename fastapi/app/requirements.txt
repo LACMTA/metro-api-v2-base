@@ -24,7 +24,6 @@ pandas
 polyline
 websockets
 fastapi-cache2[redis]
-python-json-logger
 pymemcache
 asyncio
 asyncpg
