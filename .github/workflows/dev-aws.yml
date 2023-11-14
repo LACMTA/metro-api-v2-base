@@ -75,7 +75,7 @@ jobs:
             BUILDKIT_CONTEXT_KEEP_GIT_DIR=true
       - name: Push Updated data loading service Docker Image on Lightsail Dev
         if: steps.changed-files.outputs.any_changed == 'true'
-        run: aws lightsail create-container-service-deployment --service-name data-loading-service --containers file://params-data-loading.json
+        run: aws lightsail create-container-service-deployment --service-name data-loading-service --containers file://params-data-loading-service.json
       - name: Push Updated FastAPI to Image on Lightsail Dev
         if: steps.changed-files.outputs.any_changed == 'true'
         run: aws lightsail create-container-service-deployment --service-name dev-metro-api-v2 --containers file://params-api.json --public-endpoint file://params-public-endpoint.json
