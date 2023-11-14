@@ -1,0 +1,21 @@
+{
+    "data-loading-service": {
+        "image": "lacmta/metro-api-v2:data-loading-service",
+        "environment": {
+            "FTP_SERVER": "${{secrets.FTP_SERVER}}",
+            "FTP_USERNAME": "${{secrets.FTP_USERNAME}}",
+            "FTP_PASS": "${{secrets.FTP_PASS}}",
+            "SWIFTLY_AUTH_KEY_BUS": "${{secrets.SWIFTLY_AUTH_KEY_BUS}}",
+            "SWIFTLY_AUTH_KEY_RAIL": "${{secrets.SWIFTLY_AUTH_KEY_RAIL}}",
+            "AWS_ACCESS_KEY_ID": "${{secrets.AWS_ACCESS_KEY_ID}}",
+            "ACCESS_SECRET_KEY": "${{secrets.ACCESS_SECRET_KEY}}",
+            "SWIFTLY_AUTH_KEY": "${{secrets.SWIFTLY_AUTH_KEY}}",
+            "API_DB_URI": "${{secrets.API_DB_URI}}",
+            "HASH_KEY": "${{secrets.HASH_KEY}}",
+            "HASHING_ALGORITHM": "${{secrets.HASHING_ALGORITHM}}",
+            "LOGZIO_TOKEN": "${{secrets.LOGZIO_TOKEN}}",
+            "LOGZIO_URL": "${{secrets.LOGZIO_URL}}",
+            "RUNNING_ENV": "dev"
+        }
+    }
+}
