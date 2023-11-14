@@ -42,7 +42,7 @@ jobs:
           echo HASHING_ALGORITHM=${{ secrets.HASHING_ALGORITHM }} >> $GITHUB_ENV
           echo LOGZIO_TOKEN=${{ secrets.LOGZIO_TOKEN }} >> $GITHUB_ENV
       - name: Replace placeholders in JSON files
-        run: ../replace_secrets.sh
+        run: ./replace_secrets.sh
       - name: Upgrade AWS CLI version and setup lightsailctl
         if: steps.changed-files.outputs.any_changed == 'true'
         run: | 
