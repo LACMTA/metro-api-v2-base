@@ -41,6 +41,9 @@ jobs:
           echo HASH_KEY=${{ secrets.HASH_KEY }} >> $GITHUB_ENV
           echo HASHING_ALGORITHM=${{ secrets.HASHING_ALGORITHM }} >> $GITHUB_ENV
           echo LOGZIO_TOKEN=${{ secrets.LOGZIO_TOKEN }} >> $GITHUB_ENV
+      - name: Set execute permissions for script
+        run: chmod +x replace_secrets.sh
+
       - name: Replace placeholders in JSON files
         run: ./replace_secrets.sh
       - name: Upgrade AWS CLI version and setup lightsailctl
