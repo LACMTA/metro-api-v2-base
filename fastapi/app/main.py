@@ -190,7 +190,7 @@ from sqlalchemy import Table
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
 # db = connect(host=''ort=0, timeout=None, source_address=None)
 
-
+import traceback
 
 @app.exception_handler(Exception)
 async def validation_exception_handler(request, err):
@@ -198,6 +198,11 @@ async def validation_exception_handler(request, err):
     # Change here to LOGGER
     return JSONResponse(status_code=400, content={"message": f"{base_error_message}. Detail: {err}"})
 
+@app.exception_handler(Exception)
+async def exception_handler(request: Request, exc: Exception):
+    traceback_str = ''.join(traceback.format_exception(etype=type(exc), value=exc, tb=exc.__traceback__))
+    print(traceback_str)
+    return {"error": str(exc)}
 # templates = Jinja2Templates(directory="app/documentation")
 # app.mount("/", StaticFiles(directory="app/documentation", html=True))
 templates = Jinja2Templates(directory="app/frontend")
