@@ -4,16 +4,18 @@ from sqlalchemy import create_engine,MetaData
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.pool import NullPool
 
 from .config import Config
 from .utils.log_helper import *
+from sqlalchemy.pool import NullPool
 
 def create_async_uri(uri):
     return uri.replace('postgresql', 'postgresql+asyncpg')
 
 
-engine = create_engine(Config.API_DB_URI, echo=False)
-async_engine = create_async_engine(create_async_uri(Config.API_DB_URI), echo=False)
+engine = create_engine(Config.API_DB_URI, echo=False, poolclass=NullPool)
+async_engine = create_async_engine(create_async_uri(Config.API_DB_URI), echo=False, poolclass=NullPool)
 async_session = sessionmaker(async_engine, expire_on_commit=False, class_=AsyncSession)
 Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -36,7 +38,6 @@ async def get_async_db():
             yield db
         finally:
             await async_engine.dispose()
-
 # async def get_refreshed_db(query):
 #     async with engine.begin() as conn:
 
