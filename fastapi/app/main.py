@@ -62,7 +62,7 @@ from fastapi_pagination.links import Page
 
 from .utils.log_helper import *
 
-from .database import Session, AsyncSession, engine, session, get_db,get_async_db, create_pool, close_pool
+from .database import Session, AsyncSession, engine, session, get_db,get_async_db
 from . import crud, models, security, schemas
 from .config import Config
 from pathlib import Path
@@ -703,8 +703,6 @@ async def get_all_routes():
 
 @app.on_event("startup")
 async def startup_event():
-    await create_pool()
-
     # initialize_redis()
     # app.state.redis = await aioredis.from_url(, socket_connect_timeout=5)
     redis = RedisBackend(Config.REDIS_URL)
@@ -733,11 +731,6 @@ async def startup_event():
     uvicorn_access_logger.addFilter(LogFilter())
     uvicorn_error_logger.addFilter(LogFilter())
     logger.addFilter(LogFilter())
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await close_pool()
-
 
 app.add_middleware(
     CORSMiddleware,
