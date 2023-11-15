@@ -35,4 +35,3 @@ fastapi-pagination
 geojson
 pytest
 asyncpg
-pickle
