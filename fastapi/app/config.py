@@ -48,17 +48,6 @@ def get_pgbouncer_uri(db_uri, pgbouncer_host='localhost', pgbouncer_port=6432):
     return urlunparse(parsed._replace(netloc=f"{parsed.username}:{parsed.password}@{pgbouncer_host}:{pgbouncer_port}"))
 
 
-pool = None
-
-async def create_pool():
-    global pool
-    pool = await asyncpg.create_pool(get_pgbouncer_uri(os.environ.get('API_DB_URI')))
-
-async def close_pool():
-    global pool
-    if pool is not None:
-        await pool.close()
-
 class Config:
     BASE_URL = "https://api.metro.net"
     REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
