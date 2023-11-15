@@ -4,9 +4,9 @@ import logging
 import git
 
 try:
-    if os.path.isfile('app/secrets.py'):
+    if os.path.isfile('app/app_secrets.py'):
         print('Loading secrets from secrets.py')
-        from .secrets import load_secrets
+        from .app_secrets import load_secrets
         load_secrets()
 except ModuleNotFoundError:
     logging.info('No secrets.py found, loading from environment variables')
@@ -41,20 +41,11 @@ def get_version_tag_from_online_github_repo():
     except Exception as e:
         logging.info('Error getting version tag from github: ' + str(e))
         return '0.0.error '+ str(e)
-def set_db_schema():
-    try:
-        current_environment = os.environ.get('RUNNING_ENV')
-        if current_environment == 'prod':
-            return 'metro_api'
-        else:
-            return 'metro_api_dev'
-    except Exception as e:
-        print('Error setting db schema: ' + str(e))
+
 class Config:
     BASE_URL = "https://api.metro.net"
-    MEMCACHED_HOST = os.environ.get('MEMCACHED_HOST', 'memcached')
-    MEMCACHED_PORT = os.environ.get('MEMCACHED_PORT', '11211')
-    TARGET_DB_SCHEMA = set_db_schema()
+    REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
+    TARGET_DB_SCHEMA = "metro_api"
     API_DB_URI = os.environ.get('API_DB_URI')
     SECRET_KEY = os.environ.get('HASH_KEY')
     ALGORITHM = os.environ.get('HASHING_ALGORITHM')

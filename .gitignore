@@ -17,3 +17,8 @@ notebooks/**.zip
 notebooks/input
 "version.txt" 
 aws-lightsail-container.json
+"app_secrets.py"
+secrets.bat
+fastapi/app/app_secrets.py
+.gitignore
+data-loading-service/app/app_secrets.py

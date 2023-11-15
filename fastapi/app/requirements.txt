@@ -27,9 +27,11 @@ fastapi-cache2[redis]
 pymemcache
 asyncio
 asyncpg
+aioredis
 sqlalchemy[asyncio]
 versiontag
 gitpython
 fastapi-pagination
 geojson
 pytest
+pickle

@@ -9,6 +9,7 @@ import requests
 import csv
 import os
 import asyncio
+import aioredis
 
 import pytz
 
@@ -37,11 +38,15 @@ import yaml
 
 from starlette.middleware.cors import CORSMiddleware
 
-# from fastapi_cache import FastAPICache
-# from fastapi_cache.decorator import cache
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.redis import RedisBackend
+from fastapi_cache.decorator import cache
+
+
 from starlette.requests import Request
 from starlette.responses import Response
 
+# from redis import asyncio as aioredis
 from enum import Enum
 
 # for OAuth2
@@ -66,26 +71,39 @@ from logzio.handler import LogzioHandler
 import logging
 import typing as t
 
-from pymemcache.client.base import Client
 
 ### Pagination Parameter Options (deafult pagination count, default starting page, max_limit)
 Page = Page.with_custom_options(
     size=Query(100, ge=1, le=500),
 )
 
-# Create a Memcached client
-client = Client((Config.MEMCACHED_HOST, int(Config.MEMCACHED_PORT)))
+# Define the redis variable at the top level
+redis = None
+
+def initialize_redis():
+    global redis
+    logging.info(f"Connecting to Redis at {Config.REDIS_URL}")
+    for i in range(5):  # Retry up to 5 times
+        try:
+            redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+            break  # If the connection is successful, break out of the loop
+        except aioredis.exceptions.ConnectionError as e:
+            logging.error(f"Failed to connect to Redis: {e}")
+            if i < 4:  # If this was not the last attempt, wait a bit before retrying
+                time.sleep(5)  # Wait for 5 seconds
+            else:  # If this was the last attempt, re-raise the exception
+                raise
 
 async def get_data(db: Session, key: str, fetch_func):
-    # Get data from Memcached
-    data = client.get(key)
+    # Get data from Redis
+    data = await redis.get(key)
     if data is None:
-        # If data is not in Memcached, get it from the database
+        # If data is not in Redis, get it from the database
         data = fetch_func(db, key)
         if data is None:
             return None
-        # Set data in Memcached
-        client.set(key, data)
+        # Set data in Redis
+        await redis.set(key, data)
     return data
 
 
@@ -187,10 +205,16 @@ inspector = inspect(engine)
 
 from sqlalchemy import Table
 
+try:
+    for table_name in models.Base.metadata.tables.keys():
+        table = Table(table_name, models.Base.metadata, autoload_with=engine)
+        if not table.exists(engine):
+            models.Base.metadata.tables[table_name].create(bind=engine)
+except SQLAlchemyError as e:
+    print(f"An error occurred while creating the tables: {e}")
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
 # db = connect(host=''ort=0, timeout=None, source_address=None)
 
-import traceback
 
 @app.exception_handler(Exception)
 async def validation_exception_handler(request, err):
@@ -198,11 +222,6 @@ async def validation_exception_handler(request, err):
     # Change here to LOGGER
     return JSONResponse(status_code=400, content={"message": f"{base_error_message}. Detail: {err}"})
 
-@app.exception_handler(Exception)
-async def exception_handler(request: Request, exc: Exception):
-    traceback_str = ''.join(traceback.format_exception(etype=type(exc), value=exc, tb=exc.__traceback__))
-    print(traceback_str)
-    return {"error": str(exc)}
 # templates = Jinja2Templates(directory="app/documentation")
 # app.mount("/", StaticFiles(directory="app/documentation", html=True))
 templates = Jinja2Templates(directory="app/frontend")
@@ -691,6 +710,11 @@ async def get_all_routes():
 
 @app.on_event("startup")
 async def startup_event():
+    # initialize_redis()
+    # app.state.redis = await aioredis.from_url(, socket_connect_timeout=5)
+    redis = RedisBackend(Config.REDIS_URL)
+    FastAPICache.init(backend=redis, prefix="fastapi-cache")
+    # await app.state.redis.flushdb()  # Add this line to flush the Redis database
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_error_logger = logging.getLogger("uvicorn.error")
     logger = logging.getLogger("uvicorn.app")
@@ -725,3 +749,7 @@ app.add_middleware(
     expose_headers=["*"],
 )
 add_pagination(app)
+# @app.on_event("startup")
+# async def startup_redis():
+    # redis =  aioredis.from_url("redis://localhost", encoding="utf8", decode_responses=True,port=6379)
+#     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
