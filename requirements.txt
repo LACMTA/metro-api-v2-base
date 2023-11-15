@@ -33,4 +33,4 @@ aioredis
 versiontag
 gitpython
 crython
-python-json-logger
+pickle

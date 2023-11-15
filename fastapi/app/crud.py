@@ -36,6 +36,8 @@ from .utils.db_helper import *
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+import aioredis
+import pickle
 
 from sqlalchemy import select
 
@@ -48,6 +50,7 @@ from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
+redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
 # import sqlalchemy
 
 def asdict(obj):
@@ -66,6 +69,36 @@ def get_all_data(db: Session, model, agency_id):
     return result
 
 
+async def get_data_redis(db, model, id_field, id_value):
+    # Create a unique key for this id_value
+    key = f'{model.__tablename__}:{id_value}'
+
+    # Try to get data from Redis
+    data = await redis.get(key)
+
+    if data is None:
+        # If data is not in Redis, get it from the database
+        result = db.query(model).filter(getattr(model, id_field) == id_value).all()
+
+        if not result:
+            return None
+
+        # Convert the result to JSON and store it in Redis
+        data = json.dumps([{
+            key: (mapping(loads(value.desc)) if key == 'geometry' else value) 
+            for key, value in row.__dict__.items() 
+            if not key.startswith('_sa_instance_state')
+        } for row in result])
+        await redis.set(key, data)
+    else:
+        # Parse the JSON-formatted string back into a Python data structure
+        data = json.loads(data)
+
+    # Ensure data is a list
+    if not isinstance(data, list):
+        data = [data]
+    return data
+
 def get_unique_keys(db: Session, model, agency_id, key_column=None):
     if key_column:
         this_data = db.query(distinct(model.__dict__[key_column])).filter(model.agency_id == agency_id).all()
@@ -76,7 +109,6 @@ def get_unique_keys(db: Session, model, agency_id, key_column=None):
     return unique_keys
 
 
-from pymemcache.client.base import Client
 
 
 ####
@@ -85,18 +117,20 @@ async def get_vehicle_data_async(db: AsyncSession, agency_id: str, vehicle_id: s
     data = result.scalars().one_or_none()
     return data
 
-
-# Create a Memcached client
-client = Client((Config.MEMCACHED_HOST, int(Config.MEMCACHED_PORT)))
+import pickle
 
 async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None):
     # Create a unique key for this query
     key = f"{model.__name__}:{agency_id}:{field_name}:{field_value}"
 
-    # Try to get the result from Memcached
-    result = client.get(key)
+    # Try to get the result from Redis
+    result = await redis.get(key)
     if result is not None:
-        return json.loads(result.decode('utf-8'))
+        data = pickle.loads(result)
+        if isinstance(data, model):
+            # If the data is a SQLAlchemy model instance, convert it to a dict
+            data = {c.key: getattr(data, c.key) for c in sqlalchemy.inspect(data).mapper.column_attrs}
+        return data
 
     if field_name and field_value:
         stmt = select(model).where(getattr(model, field_name) == field_value, getattr(model, 'agency_id') == agency_id)
@@ -104,10 +138,6 @@ async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], a
         stmt = select(model).where(getattr(model, 'agency_id') == agency_id)
     result = await async_session.execute(stmt)
     data = result.scalars().all()
-    
-    # Store the result in Memcached
-    client.set(key, json.dumps([item.to_dict() for item in data]).encode('utf-8'))
-
     return [item.to_dict() for item in data]
     
 async def get_all_data_async(async_session: Session, model: Type[BaseModel], agency_id: str):
@@ -122,8 +152,6 @@ async def get_list_data_async(db: Session, model: Type[DeclarativeMeta], field: 
     return data
 
 import logging
-from pymemcache.client.base import Client
-import json
 
 async def get_list_of_unique_values_async(session: AsyncSession, model, agency_id: str, field_name: str):
     """
@@ -133,11 +161,11 @@ async def get_list_of_unique_values_async(session: AsyncSession, model, agency_i
     key = f"{model.__name__}:{agency_id}:{field_name}:unique_values"
     logging.info(f"Generated key: {key}")
 
-    # Try to get the result from Memcached
-    result = client.get(key)
+    # Try to get the result from Redis
+    result = await redis.get(key)
     if result is not None:
-        logging.info("Found result in Memcached")
-        return json.loads(result.decode('utf-8'))
+        logging.info("Found result in Redis")
+        return pickle.loads(result)
 
     # Use reflection to get the field from the model
     field = getattr(model, field_name, None)
@@ -156,8 +184,8 @@ async def get_list_of_unique_values_async(session: AsyncSession, model, agency_i
 
     logging.info(f"Unique values from database: {unique_values}")
 
-    # Store the result in Memcached
-    client.set(key, json.dumps(unique_values).encode('utf-8'))
+    # Store the result in Redis
+    await redis.set(key, pickle.dumps(unique_values))
 
     return unique_values
 
@@ -192,13 +220,12 @@ def get_stop_times_by_route_code(db, route_code: str,agency_id: str):
         the_query = paginate_sqlalchemy(db, select(models.StopTimes).filter(models.StopTimes.route_code == route_code,models.StopTimes.agency_id == agency_id))
     return the_query
 
-
 async def get_stop_times_by_trip_id(db, trip_id: str, agency_id: str):
-    # Try to get the result from Memcached first
+    # Try to get the result from Redis first
     cache_key = f'stop_times:{trip_id}:{agency_id}'
-    cached_result = client.get(cache_key)
+    cached_result = await redis.get(cache_key)
     if cached_result is not None:
-        return json.loads(cached_result.decode('utf-8'))
+        return pickle.loads(cached_result)
 
     if trip_id == 'list':
         the_query = db.query(models.StopTimes).filter(models.StopTimes.agency_id == agency_id).distinct(models.StopTimes.trip_id).all()
@@ -212,9 +239,9 @@ async def get_stop_times_by_trip_id(db, trip_id: str, agency_id: str):
         the_query = paginate_sqlalchemy(db, select(models.StopTimes).filter(models.StopTimes.trip_id == trip_id,models.StopTimes.agency_id == agency_id))
         result = the_query
 
-    # If result is not empty, store it in Memcached for future use
+    # If result is not empty, store it in Redis for future use
     if result:
-        client.set(cache_key, json.dumps(result).encode('utf-8'))
+        await redis.set(cache_key, pickle.dumps(result))
 
     return result
 
@@ -245,13 +272,12 @@ def list_gtfs_rt_vehicle_positions_by_field_name(db, field_name: str,agency_id: 
         result.append(row[0])
     return result
 
-
 async def get_gtfs_rt_trips_by_field_name(db, field_name: str, field_value: str, agency_id: str):
-    # Try to get the result from Memcached first
+    # Try to get the result from Redis first
     cache_key = f'trips:{field_name}:{field_value}:{agency_id}'
-    cached_result = client.get(cache_key)
+    cached_result = await redis.get(cache_key)
     if cached_result is not None:
-        return json.loads(cached_result.decode('utf-8'))
+        return pickle.loads(cached_result)
 
     if field_name == 'stop_id':
         the_query = db.query(models.TripUpdate).join(models.StopTimeUpdates).filter(getattr(models.StopTimeUpdates,field_name) == field_value,models.TripUpdate.agency_id == agency_id).all()
@@ -267,18 +293,18 @@ async def get_gtfs_rt_trips_by_field_name(db, field_name: str, field_value: str,
             new_row = trip_update_reformat(row)
             result.append(new_row)
 
-    # If result is not empty, store it in Memcached for future use
+    # If result is not empty, store it in Redis for future use
     if result:
-        client.set(cache_key, json.dumps(result).encode('utf-8'))
+        await redis.set(cache_key, pickle.dumps(result))
 
     return result
 
 async def get_all_gtfs_rt_trips(db, agency_id: str):
-    # Try to get the result from Memcached first
+    # Try to get the result from Redis first
     cache_key = f'trips:{agency_id}'
-    cached_result = client.get(cache_key)
+    cached_result = await redis.get(cache_key)
     if cached_result is not None:
-        return json.loads(cached_result.decode('utf-8'))
+        return pickle.loads(cached_result)
 
     the_query = db.query(models.TripUpdate).filter(models.TripUpdate.agency_id == agency_id).all()
     result = []
@@ -286,19 +312,19 @@ async def get_all_gtfs_rt_trips(db, agency_id: str):
         new_row = trip_update_reformat(row)
         result.append(new_row)
 
-    # If result is not empty, store it in Memcached for future use
+    # If result is not empty, store it in Redis for future use
     if result:
-        client.set(cache_key, json.dumps(result).encode('utf-8'))
+        await redis.set(cache_key, pickle.dumps(result))
 
     return result
 
 async def get_all_gtfs_rt_vehicle_positions(db, agency_id: str, geojson: bool):
     try:
-        # Try to get the result from Memcached first
+        # Try to get the result from Redis first
         cache_key = f'vehicle_positions:{agency_id}:{geojson}'
-        cached_result = client.get(cache_key)
+        cached_result = await redis.get(cache_key)
         if cached_result is not None:
-            return json.loads(cached_result.decode('utf-8'))
+            return pickle.loads(cached_result)
 
         the_query = db.query(models.VehiclePositions).filter(models.VehiclePositions.agency_id == agency_id)
         all_rows = await get_all_data(the_query)  # Use the utility function here
@@ -321,9 +347,9 @@ async def get_all_gtfs_rt_vehicle_positions(db, agency_id: str, geojson: bool):
                 new_row = await vehicle_position_reformat(row, geojson)  # await the coroutine here
                 result.append(new_row)
 
-        # If result is not empty, store it in Memcached for future use
+        # If result is not empty, store it in Redis for future use
         if result:
-            client.set(cache_key, json.dumps(result).encode('utf-8'))
+            await redis.set(cache_key, pickle.dumps(result))
 
         return result
     except Exception as e:
@@ -400,14 +426,14 @@ def _async(db, agency_id: str, geojson: bool):
         return [{"message": "No Vehicle Positions available at this time"}]
 
     return result
+import pickle
 from sqlalchemy import and_
 from sqlalchemy.orm import joinedload
-
 async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session: AsyncSession, route_code: str, geojson:bool, agency_id:str):
     cache_key = f'trip_data:{route_code}:{agency_id}'
-    cached_data = client.get(cache_key)
+    cached_data = await redis.get(cache_key)
     if cached_data is not None:
-        return json.loads(cached_data.decode('utf-8'))
+        return pickle.loads(cached_data)
 
     stmt = (
         select(models.VehiclePositions).
@@ -429,15 +455,9 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session: AsyncSe
     vehicle_positions = result.scalars().all()
 
     if geojson:
-        data_to_cache = convert_to_geojson(vehicle_positions)
-    else:
-        data_to_cache = vehicle_positions
+        return convert_to_geojson(vehicle_positions)
 
-    # If result is not empty, store it in Memcached for future use
-    if data_to_cache:
-        client.set(cache_key, json.dumps(data_to_cache).encode('utf-8'))
-
-    return data_to_cache
+    return vehicle_positions
 async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session,route_code: str, geojson:bool,agency_id:str):
     the_query = await session.execute(select(models.VehiclePositions).where(models.VehiclePositions.route_code == route_code,models.VehiclePositions.agency_id == agency_id).order_by(models.VehiclePositions.route_code))
     if geojson == True:
@@ -554,12 +574,34 @@ async def get_gtfs_rt_line_detail_updates_for_route_code(session,route_code: str
             yield message_object
         else:
             yield result
+
+async def get_gtfs_rt_vehicle_positions_trip_data_redis(db, vehicle_id: str):
+    # Create a unique key for this vehicle_id
+    key = f'vehicle:{vehicle_id}'
+    
+    # Try to get data from Redis
+    data = await redis.get(key)
+    
+    if data is None:
+        # If data is not in Redis, get it from the database
+        result = db.query(models.VehiclePositions).filter(models.VehiclePositions.vehicle_id == vehicle_id).all()
+        
+        if not result:
+            return None
+        
+        # Convert the result to JSON and store it in Redis
+        data = json.dumps([dict(row) for row in result])
+        await redis.set(key, data)
+    
+    return data
+
+
 async def get_gtfs_rt_vehicle_positions_trip_data(db, vehicle_id: str, geojson: bool, agency_id: str):
-    # Try to get the result from Memcached first
+    # Try to get the result from Redis first
     cache_key = f'vehicle_positions:{vehicle_id}:{geojson}:{agency_id}'
-    result = client.get(cache_key)
+    result = await redis.get(cache_key)
     if result is not None:
-        return json.loads(result.decode('utf-8'))
+        return pickle.loads(result)
 
     result = []
     the_query = db.query(models.VehiclePositions).filter(models.VehiclePositions.vehicle_id == vehicle_id,models.VehiclePositions.agency_id == agency_id).all()
@@ -578,7 +620,7 @@ async def get_gtfs_rt_vehicle_positions_trip_data(db, vehicle_id: str, geojson: 
         this_json['type'] = "FeatureCollection"
         this_json['features'] = features
         if this_json:
-            client.set(cache_key, json.dumps(this_json).encode('utf-8'))
+            await redis.set(cache_key, pickle.dumps(this_json))
 
         return this_json
     for row in the_query:
@@ -589,6 +631,22 @@ async def get_gtfs_rt_vehicle_positions_trip_data(db, vehicle_id: str, geojson: 
         stop_name_query = db.query(models.Stops.stop_name).filter(models.Stops.stop_id == new_row.stop_id,models.Stops.agency_id == agency_id).first()
         new_row.stop_name = stop_name_query[0]
         upcoming_stop_time_update_query = db.query(models.StopTimeUpdates).filter(models.StopTimeUpdates.trip_id == new_row.trip_id,models.StopTimeUpdates.stop_sequence == new_row.current_stop_sequence).first()
+        if upcoming_stop_time_update_query is not None:
+            new_row.trip_assigned = True
+        new_row.upcoming_stop_time_update = upcoming_stop_time_reformat(upcoming_stop_time_update_query)
+        route_code_query = db.query(models.StopTimes.route_code).filter(models.StopTimes.trip_id == new_row.trip_id,models.StopTimes.stop_sequence == new_row.current_stop_sequence).first()
+        destination_code_query = db.query(models.StopTimes.destination_code).filter(models.StopTimes.trip_id == new_row.trip_id,models.StopTimes.stop_sequence == new_row.current_stop_sequence).first()
+        new_row.route_code = route_code_query[0]
+        new_row.destination_code = destination_code_query[0]
+        result.append(new_row)
+    if result == []:
+        message_object = [{'message': 'No vehicle data for this vehicle id: ' + str(vehicle_id)}]
+        return message_object
+    else:
+        if result:
+            await redis.set(cache_key, pickle.dumps(result))
+
+        return result
     
 def get_gtfs_rt_trips_by_trip_id(db, trip_id: str,agency_id: str):
     the_query = db.query(models.TripUpdate).filter(models.TripUpdate.trip_id == trip_id,models.TripUpdate.agency_id == agency_id).all()

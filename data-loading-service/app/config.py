@@ -3,6 +3,15 @@ import logging
 import versiontag
 import git
 
+try:
+    if os.path.isfile('app/app_secrets.py'):
+        print('Loading secrets from secrets.py')
+        from app_secrets import load_secrets  # Changed from relative to absolute import
+        load_secrets()
+except ModuleNotFoundError:
+    logging.info('No secrets.py found, loading from environment variables')
+    pass
+
 def get_parent_folder_git_tag_version():
     full_version_tag = versiontag.get_version(pypi=True)
     if full_version_tag is None:
