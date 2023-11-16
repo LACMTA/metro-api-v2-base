@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     proj-bin \
     libgeos-dev \
     pgbouncer \
+    gosu \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir -r requirements.txt
 
@@ -25,7 +26,6 @@ COPY . .
 RUN useradd -ms /bin/bash pgbouncer && \
     chown -R pgbouncer:pgbouncer /etc/pgbouncer
 
-USER pgbouncer
 CMD python -c "\
 import os;\
 from urllib.parse import urlparse;\
@@ -44,7 +44,7 @@ print(f'export DB_NAME={result.path[1:]}')" > /tmp/env.sh && \
     echo "listen_addr = *" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "auth_type = md5" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "auth_file = /etc/pgbouncer/userlist.txt" >> /etc/pgbouncer/pgbouncer.ini && \
-    pgbouncer /etc/pgbouncer/pgbouncer.ini & \
+    gosu pgbouncer pgbouncer /etc/pgbouncer/pgbouncer.ini & \
     gunicorn app.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:80 --timeout 120 --keep-alive 5
 
 EXPOSE 80
