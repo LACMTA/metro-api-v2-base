@@ -19,14 +19,32 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir -r requirements.txt
 
-# Copy the pgbouncer configuration file
-COPY pgbouncer.ini /etc/pgbouncer/pgbouncer.ini
-
 COPY . .
 
-CMD export DB_USER=$(echo $API_DB_URI | cut -d'/' -f3 | cut -d':' -f1) && \
-    export DB_PASSWORD=$(echo $API_DB_URI | cut -d'/' -f3 | cut -d':' -f2 | cut -d'@' -f1) && \
-    echo "$DB_USER:md5`echo -n "$DB_PASSWORD$DB_USER" | md5sum | cut -d ' ' -f1`" > /etc/pgbouncer/userlist.txt && \
+# Create a new user and switch to that user
+RUN useradd -ms /bin/bash pgbouncer && \
+    chown -R pgbouncer:pgbouncer /etc/pgbouncer
+
+USER pgbouncer
+CMD python -c "\
+import os;\
+from urllib.parse import urlparse;\
+result = urlparse(os.environ['API_DB_URI']);\
+print(f'export DB_USER={result.username}');\
+print(f'export DB_PASSWORD={result.password}');\
+print(f'export DB_HOST={result.hostname}');\
+print(f'export DB_PORT={result.port}');\
+print(f'export DB_NAME={result.path[1:]}')" > /tmp/env.sh && \
+    . /tmp/env.sh && \
+    echo "\"$DB_USER\" \"md5`echo -n \"$DB_PASSWORD$DB_USER\" | md5sum | cut -d ' ' -f1`\"" > /etc/pgbouncer/userlist.txt && \
+    echo "[databases]" > /etc/pgbouncer/pgbouncer.ini && \
+    echo "$DB_NAME = host=$DB_HOST port=$DB_PORT dbname=$DB_NAME user=$DB_USER password='$DB_PASSWORD'" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "[pgbouncer]" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "listen_port = 6432" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "listen_addr = *" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "auth_type = md5" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "auth_file = /etc/pgbouncer/userlist.txt" >> /etc/pgbouncer/pgbouncer.ini && \
+    pgbouncer /etc/pgbouncer/pgbouncer.ini & \
     gunicorn app.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:80 --timeout 120 --keep-alive 5
 
 EXPOSE 80

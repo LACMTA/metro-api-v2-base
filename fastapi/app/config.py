@@ -43,10 +43,20 @@ def get_version_tag_from_online_github_repo():
         logging.info('Error getting version tag from github: ' + str(e))
         return '0.0.error '+ str(e)
 
-def get_pgbouncer_uri(db_uri, pgbouncer_host='localhost', pgbouncer_port=6432):
-    parsed = urlparse(db_uri)
-    return urlunparse(parsed._replace(netloc=f"{parsed.username}:{parsed.password}@{pgbouncer_host}:{pgbouncer_port}"))
+def get_pgbouncer_uri(original_uri):
+    # Parse the original URI
+    parsed = urlparse(original_uri)
 
+    # Replace the hostname and port with the ones for PgBouncer
+    pgbouncer_host = 'localhost'  # PgBouncer is running on the same machine
+    pgbouncer_port = 6432  # Default PgBouncer port
+
+    # Construct the new URI
+    pgbouncer_uri = urlunparse(
+        (parsed.scheme, f"{parsed.username}:{parsed.password}@{pgbouncer_host}:{pgbouncer_port}", parsed.path, parsed.params, parsed.query, parsed.fragment)
+    )
+
+    return pgbouncer_uri
 
 class Config:
     BASE_URL = "https://api.metro.net"
