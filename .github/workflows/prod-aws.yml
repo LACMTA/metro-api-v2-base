@@ -76,7 +76,7 @@ jobs:
           context: ./fastapi/
           build-args: | 
             BUILDKIT_CONTEXT_KEEP_GIT_DIR=true
-      - name: Push Updated data loading service Docker Image on Lightsail Dev
+      - name: Push Updated data loading service Docker Image on Lightsail Prod
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           MAX_RETRIES=5
