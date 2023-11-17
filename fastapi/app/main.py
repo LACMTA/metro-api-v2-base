@@ -289,13 +289,26 @@ def get_columns_from_schema(schema):
 def standardize_string(input_string):
     return input_string.lower().replace(" ", "")
 
+#### End Helper functions ####
+
+####################
+#  Begin Update Interval Settings
+####################
+
+REALTIME_UDPATE_INTERVAL = 9
+STATIC_UDPATE_INTERVAL = 3600
+CANCELED_UDPATE_INTERVAL = 3600
+GO_PASS_UPDATE_INTERVAL = 3600
+
+
 ####################
 #  Begin Routes
 ####################
 
 #### Begin GTFS-RT Routes ####
 
-@app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])     
+@app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])
+@cache(expire=REALTIME_UDPATE_INTERVAL)     
 async def get_all_trip_updates(agency_id: AgencyIdEnum, async_db: AsyncSession = Depends(get_async_db)):
     """
     Get all trip updates.
@@ -306,7 +319,8 @@ async def get_all_trip_updates(agency_id: AgencyIdEnum, async_db: AsyncSession =
         raise HTTPException(status_code=404, detail="Data not found")
     return data
 
-@app.get("/{agency_id}/trip_updates/{field}/{ids}", tags=["Real-Time data"])     
+@app.get("/{agency_id}/trip_updates/{field}/{ids}", tags=["Real-Time data"]) 
+@cache(expire=REALTIME_UDPATE_INTERVAL)    
 async def get_trip_updates_by_ids(agency_id: AgencyIdEnum, field: TripUpdatesFieldsEnum, ids: str, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
     """
     Get specific trip updates by IDs dependant on the `field` selected. IDs can be provided as a comma-separated list.
@@ -335,7 +349,8 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: TripUpdatesFi
         raise HTTPException(status_code=404, detail="Data not found")
     return data
 
-@app.get("/{agency_id}/vehicle_positions", tags=["Real-Time data"])     
+@app.get("/{agency_id}/vehicle_positions", tags=["Real-Time data"])   
+@cache(expire=REALTIME_UDPATE_INTERVAL)  
 async def get_all_vehicle_positions(agency_id: AgencyIdEnum, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
     """
     Get all vehicle positions updates.
@@ -350,6 +365,7 @@ async def get_all_vehicle_positions(agency_id: AgencyIdEnum, format: FormatEnum 
     return data
 
 @app.get("/{agency_id}/vehicle_positions/{field}/{ids}", tags=["Real-Time data"])     
+@cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_vehicle_positions_by_ids(agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
     """
     Get specific vehicle position updates by IDs dependant on the `field` selected. IDs can be provided as a comma-separated list.
@@ -367,7 +383,8 @@ async def get_vehicle_positions_by_ids(agency_id: AgencyIdEnum, field: VehiclePo
         data[id] = result
     return data
 
-@app.get("/{agency_id}/vehicle_positions/{field}", tags=["Real-Time data"])     
+@app.get("/{agency_id}/vehicle_positions/{field}", tags=["Real-Time data"])
+@cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, async_db: AsyncSession = Depends(get_async_db)):
     """
     Get a list of all values for a specific field in the vehicle positions updates.
@@ -384,11 +401,13 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositi
 ##### todo: Needs to be tested
 
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
+@cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: AsyncSession = Depends(get_db)):
     result = await crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value)
     return result
 
 @app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id?}", tags=["Real-Time data"])
+@cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
     if operation == OperationEnum.ALL:
         result = await crud.get_all_data_async(async_db, models.VehiclePositions, operation.value)
@@ -411,6 +430,7 @@ async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Option
 
 
 @app.get("/{agency_id}/trip_detail/route/{route_code?}", tags=["Real-Time data"])
+@cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
     if operation == OperationEnum.ALL:
         result = await crud.get_all_data_async(async_db, models.VehiclePositions, operation.value)
@@ -437,6 +457,7 @@ async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional
 
 
 @app.get("/canceled_service_summary",tags=["Canceled Service Data"])
+@cache(expire=CANCELED_UDPATE_INTERVAL)
 async def get_canceled_trip_summary(db: Session = Depends(get_db)):
     result = crud.get_canceled_trips(db,'all')
     canceled_trips_summary = {}
@@ -462,12 +483,14 @@ async def get_canceled_trip_summary(db: Session = Depends(get_db)):
                 "last_updated":update_time}
 
 @app.get("/canceled_service/line/{line}",tags=["Canceled Service Data"])
+@cache(expire=CANCELED_UDPATE_INTERVAL)
 async def get_canceled_trip(db: Session = Depends(get_db),line: str = None):
     result = crud.get_canceled_trips(db,line)
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
 @app.get("/canceled_service/all",tags=["Canceled Service Data"])
+@cache(expire=CANCELED_UDPATE_INTERVAL)
 async def get_canceled_trip(db: Session = Depends(get_db)):
     result = crud.get_canceled_trips(db,'all')
     json_compatible_item_data = jsonable_encoder(result)
@@ -475,45 +498,53 @@ async def get_canceled_trip(db: Session = Depends(get_db)):
 
 ### GTFS Static data ###
 @app.get("/{agency_id}/route_stops/{route_code}",tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def populate_route_stops(agency_id: AgencyIdEnum,route_code:str, daytype: DayTypesEnum = DayTypesEnum.all, db: Session = Depends(get_db)):
     result = crud.get_gtfs_route_stops(db,route_code,daytype.value,agency_id.value)
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
 @app.get("/{agency_id}/route_stops_grouped/{route_code}",tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def populate_route_stops_grouped(agency_id: AgencyIdEnum,route_code:str, db: Session = Depends(get_db)):
     result = crud.get_gtfs_route_stops_grouped(db,route_code,agency_id.value)
     json_compatible_item_data = jsonable_encoder(result[0])
     return JSONResponse(content=json_compatible_item_data)
 
 @app.get("/calendar_dates",tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
     result = crud.get_calendar_dates(db)
     calendar_dates = jsonable_encoder(result)
     return JSONResponse(content={"calendar_dates":calendar_dates})
 
 @app.get("/{agency_id}/stop_times/route_code/{route_code}",tags=["Static data"],response_model=Page[schemas.StopTimes])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_stop_times_by_route_code_and_agency(agency_id: AgencyIdEnum,route_code, db: Session = Depends(get_db)):
     result = crud.get_stop_times_by_route_code(db,route_code,agency_id.value)
     return result
 
 
 @app.get("/{agency_id}/stop_times/trip_id/{trip_id}",tags=["Static data"],response_model=Page[schemas.StopTimes])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_stop_times_by_trip_id_and_agency(agency_id: AgencyIdEnum,trip_id, db: Session = Depends(get_db)):
     result = crud.get_stop_times_by_trip_id(db,trip_id,agency_id.value)
     return result
 
 @app.get("/{agency_id}/stops/{stop_id}",tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_stops(agency_id: AgencyIdEnum,stop_id, db: Session = Depends(get_db)):
     result = crud.get_stops_id(db,stop_id,agency_id.value)
     return result
 
 @app.get("/{agency_id}/trips/{trip_id}",tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_bus_trips(agency_id: AgencyIdEnum,trip_id, db: Session = Depends(get_db)):
     result = crud.get_trips_data(db,trip_id,agency_id.value)
     return result
 
 @app.get("/{agency_id}/shapes/{shape_id}",tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_shapes(agency_id: AgencyIdEnum,shape_id, geojson: bool = False,db: Session = Depends(get_db)):
     if shape_id == "list":
         result = crud.get_trip_shapes_list(db,agency_id.value)
@@ -522,6 +553,7 @@ async def get_shapes(agency_id: AgencyIdEnum,shape_id, geojson: bool = False,db:
     return result
 
 @app.get("/{agency_id}/trip_shapes/{shape_id}",tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_trip_shapes(agency_id: AgencyIdEnum,shape_id, db: Session = Depends(get_db)):
     if shape_id == "all":
         result = crud.get_trip_shapes_all(db,agency_id.value)
@@ -532,6 +564,7 @@ async def get_trip_shapes(agency_id: AgencyIdEnum,shape_id, db: Session = Depend
     return result
 
 @app.get("/{agency_id}/calendar/{service_id}",tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_calendar_list(agency_id: AgencyIdEnum,service_id, db: Session = Depends(get_db)):
     if service_id == "list":
         result = crud.get_calendar_list(db,agency_id.value)
@@ -541,16 +574,19 @@ async def get_calendar_list(agency_id: AgencyIdEnum,service_id, db: Session = De
 
 
 @app.get("/{agency_id}/calendar/{service_id}",tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_calendar(agency_id: AgencyIdEnum,service_id, db: Session = Depends(get_db)):
     result = crud.get_calendar_data_by_id(db,models.Calendar,service_id,agency_id.value)
     return result
 
 @app.get("/{agency_id}/routes/{route_id}",tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_routes(agency_id: AgencyIdEnum,route_id, db: Session = Depends(get_db)):
     result = crud.get_routes_by_route_id(db,route_id,agency_id.value)
     return result
 
 @app.get("/{agency_id}/route_overview", tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_route_overview(agency_id: AllAgencyIdEnum, async_db: AsyncSession = Depends(get_async_db)):
     """
     Get route overview data for all routes.
@@ -572,6 +608,7 @@ async def get_route_overview(agency_id: AllAgencyIdEnum, async_db: AsyncSession 
         return result
 
 @app.get("/{agency_id}/route_overview/{route_code}", tags=["Static data"])
+@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_route_overview_by_route_code(agency_id: AgencyIdEnum, route_code: str, async_db: AsyncSession = Depends(get_async_db)):
     """
     Get route overview data by route code.
@@ -602,6 +639,7 @@ async def get_agency(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
 #### Begin Other data endpoints ####
 
 @app.get("/get_gopass_schools",tags=["Other data"])
+@cache(expire=GO_PASS_UPDATE_INTERVAL)
 async def get_gopass_schools(db: Session = Depends(get_db),show_missing: bool = False,combine_phone:bool = False,groupby_column:GoPassGroupEnum = None):
     if combine_phone == True:
         result = crud.get_gopass_schools_combined_phone(db,groupby_column.value)
@@ -634,10 +672,6 @@ def index(request:Request):
     return templates.TemplateResponse("index.html", context= {"request": request,"current_api_version":Config.CURRENT_API_VERSION,"update_time":human_readable_default_update})
 
 ### Misc routes
-@app.get("/metrics")
-async def metrics():
-    return generate_latest()
-
 
 # tokens
 
