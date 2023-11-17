@@ -87,7 +87,7 @@ async def initialize_redis():
     logging.info(f"Connecting to Redis at {Config.REDIS_URL}")
     for i in range(5):  # Retry up to 5 times
         try:
-            redis = await aioredis.create_redis_pool(Config.REDIS_URL)
+            redis = await create_redis_pool(Config.REDIS_URL)
             break  # If the connection is successful, break out of the loop
         except aioredis.exceptions.ConnectionError as e:
             logging.error(f"Failed to connect to Redis: {e}")
@@ -739,7 +739,7 @@ async def get_all_routes():
 
 @app.on_event("startup")
 async def startup_event():
-    redis_pool = await aioredis.create_redis_pool(Config.REDIS_URL)
+    redis_pool = await create_redis_pool(Config.REDIS_URL)
     redis = RedisBackend(redis_pool)
     FastAPICache.init(backend=redis, prefix="fastapi-cache")
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
