@@ -44,6 +44,7 @@ print(f'export DB_NAME={result.path[1:]}')" > /tmp/env.sh && \
     echo "listen_addr = *" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "auth_type = md5" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "auth_file = /etc/pgbouncer/userlist.txt" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "client_login_timeout = 120" >> /etc/pgbouncer/pgbouncer.ini && \
     gosu pgbouncer pgbouncer /etc/pgbouncer/pgbouncer.ini & \
     gunicorn app.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:80 --timeout 120 --keep-alive 5
 
