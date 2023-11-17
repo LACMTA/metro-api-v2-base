@@ -48,6 +48,8 @@ from starlette.responses import Response
 
 # from redis import asyncio as aioredis
 from enum import Enum
+from aioredis import create_redis_pool
+
 
 # for OAuth2
 from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
@@ -80,17 +82,17 @@ Page = Page.with_custom_options(
 # Define the redis variable at the top level
 redis = None
 
-def initialize_redis():
+async def initialize_redis():
     global redis
     logging.info(f"Connecting to Redis at {Config.REDIS_URL}")
     for i in range(5):  # Retry up to 5 times
         try:
-            redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+            redis = await aioredis.create_redis_pool(Config.REDIS_URL)
             break  # If the connection is successful, break out of the loop
         except aioredis.exceptions.ConnectionError as e:
             logging.error(f"Failed to connect to Redis: {e}")
             if i < 4:  # If this was not the last attempt, wait a bit before retrying
-                time.sleep(5)  # Wait for 5 seconds
+                await asyncio.sleep(5)  # Wait for 5 seconds
             else:  # If this was the last attempt, re-raise the exception
                 raise
 
@@ -737,11 +739,9 @@ async def get_all_routes():
 
 @app.on_event("startup")
 async def startup_event():
-    # initialize_redis()
-    # app.state.redis = await aioredis.from_url(, socket_connect_timeout=5)
-    redis = RedisBackend(Config.REDIS_URL)
+    redis_pool = await aioredis.create_redis_pool(Config.REDIS_URL)
+    redis = RedisBackend(redis_pool)
     FastAPICache.init(backend=redis, prefix="fastapi-cache")
-    # await app.state.redis.flushdb()  # Add this line to flush the Redis database
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_error_logger = logging.getLogger("uvicorn.error")
     logger = logging.getLogger("uvicorn.app")
