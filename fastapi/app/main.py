@@ -2,6 +2,8 @@
 from distutils.command.config import config
 from typing import Union, List, Dict, Optional
 from versiontag import get_version
+import traceback
+import sys
 
 import http
 import json
@@ -738,32 +740,36 @@ async def get_all_routes():
 
 @app.on_event("startup")
 async def startup_event():
-    redis_pool = await aioredis.from_url(Config.REDIS_URL)
-    redis = RedisBackend(redis_pool)
-    FastAPICache.init(backend=redis, prefix="fastapi-cache")
-    uvicorn_access_logger = logging.getLogger("uvicorn.access")
-    uvicorn_error_logger = logging.getLogger("uvicorn.error")
-    logger = logging.getLogger("uvicorn.app")
-    logzio_formatter = logging.Formatter("%(message)s")
-    logzio_uvicorn_access_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.access', 5, Config.LOGZIO_URL)
-    logzio_uvicorn_access_handler.setLevel(logging.INFO)
-    logzio_uvicorn_access_handler.setFormatter(logzio_formatter)
+    try:
+        redis_pool = await aioredis.from_url(Config.REDIS_URL)
+        redis = RedisBackend(redis_pool)
+        FastAPICache.init(backend=redis, prefix="fastapi-cache")
+        uvicorn_access_logger = logging.getLogger("uvicorn.access")
+        uvicorn_error_logger = logging.getLogger("uvicorn.error")
+        logger = logging.getLogger("uvicorn.app")
+        logzio_formatter = logging.Formatter("%(message)s")
+        logzio_uvicorn_access_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.access', 5, Config.LOGZIO_URL)
+        logzio_uvicorn_access_handler.setLevel(logging.INFO)
+        logzio_uvicorn_access_handler.setFormatter(logzio_formatter)
 
-    logzio_uvicorn_error_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.error', 5, Config.LOGZIO_URL)
-    logzio_uvicorn_error_handler.setLevel(logging.INFO)
-    logzio_uvicorn_error_handler.setFormatter(logzio_formatter)
+        logzio_uvicorn_error_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.error', 5, Config.LOGZIO_URL)
+        logzio_uvicorn_error_handler.setLevel(logging.INFO)
+        logzio_uvicorn_error_handler.setFormatter(logzio_formatter)
 
-    logzio_app_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'fastapi.app', 5, Config.LOGZIO_URL)
-    logzio_app_handler.setLevel(logging.INFO)
-    logzio_app_handler.setFormatter(logzio_formatter)
+        logzio_app_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'fastapi.app', 5, Config.LOGZIO_URL)
+        logzio_app_handler.setLevel(logging.INFO)
+        logzio_app_handler.setFormatter(logzio_formatter)
 
-    uvicorn_access_logger.addHandler(logzio_uvicorn_access_handler)
-    uvicorn_error_logger.addHandler(logzio_uvicorn_error_handler)
-    logger.addHandler(logzio_app_handler)
+        uvicorn_access_logger.addHandler(logzio_uvicorn_access_handler)
+        uvicorn_error_logger.addHandler(logzio_uvicorn_error_handler)
+        logger.addHandler(logzio_app_handler)
 
-    uvicorn_access_logger.addFilter(LogFilter())
-    uvicorn_error_logger.addFilter(LogFilter())
-    logger.addFilter(LogFilter())
+        uvicorn_access_logger.addFilter(LogFilter())
+        uvicorn_error_logger.addFilter(LogFilter())
+        logger.addFilter(LogFilter())
+    except:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)
 
 app.add_middleware(
     CORSMiddleware,
