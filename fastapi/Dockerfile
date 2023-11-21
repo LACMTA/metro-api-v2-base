@@ -32,7 +32,7 @@ result = urlparse(os.environ['API_DB_URI']);\
 print(f'export DB_USER={result.username}');\
 print(f'export DB_PASSWORD={result.password}');\
 print(f'export DB_HOST={result.hostname}');\
-print(f'export DB_PORT={result.port}');\
+print(f'export DB_PORT=6432');\
 print(f'export DB_NAME={result.path[1:]}')" > /tmp/env.sh && \
     . /tmp/env.sh && \
     echo "\"$DB_USER\" \"md5`echo -n \"$DB_PASSWORD$DB_USER\" | md5sum | cut -d ' ' -f1`\"" > /etc/pgbouncer/userlist.txt && \
