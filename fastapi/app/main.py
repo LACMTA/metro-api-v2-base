@@ -269,7 +269,7 @@ inspector = inspect(engine)
 from sqlalchemy import Table
 
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
-# app.add_middleware(RateLimitMiddleware, limit=100, interval=60)
+app.add_middleware(RateLimitMiddleware, limit=100, interval=60)
 
 # db = connect(host=''ort=0, timeout=None, source_address=None)
 
