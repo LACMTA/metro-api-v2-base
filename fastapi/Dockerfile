@@ -32,7 +32,7 @@ result = urlparse(os.environ['API_DB_URI']);\
 print(f'export DB_USER={result.username}');\
 print(f'export DB_PASSWORD={result.password}');\
 print(f'export DB_HOST={result.hostname}');\
-print(f'export DB_PORT=6432');\
+print(f'export DB_PORT={result.port}');\
 print(f'export DB_NAME={result.path[1:]}')" > /tmp/env.sh && \
     . /tmp/env.sh && \
     echo "\"$DB_USER\" \"md5`echo -n \"$DB_PASSWORD$DB_USER\" | md5sum | cut -d ' ' -f1`\"" > /etc/pgbouncer/userlist.txt && \
@@ -43,9 +43,7 @@ print(f'export DB_NAME={result.path[1:]}')" > /tmp/env.sh && \
     echo "listen_addr = *" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "auth_type = md5" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "auth_file = /etc/pgbouncer/userlist.txt" >> /etc/pgbouncer/pgbouncer.ini && \
-    echo "client_login_timeout = 120" >> /etc/pgbouncer/pgbouncer.ini && \
-    echo "pool_size = 30" >> /etc/pgbouncer/pgbouncer.ini && \
-    echo "query_wait_timeout = 300" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "client_login_timeout = 300" >> /etc/pgbouncer/pgbouncer.ini && \
     gosu pgbouncer pgbouncer /etc/pgbouncer/pgbouncer.ini & \
-    exec uvicorn app.main:app --host 0.0.0.0 --port 80 --workers 2
+    exec gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:80 --workers 2
 EXPOSE 80
