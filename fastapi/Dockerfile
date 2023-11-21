@@ -44,6 +44,8 @@ print(f'export DB_NAME={result.path[1:]}')" > /tmp/env.sh && \
     echo "auth_type = md5" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "auth_file = /etc/pgbouncer/userlist.txt" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "client_login_timeout = 120" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "pool_size = 30" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "query_wait_timeout = 300" >> /etc/pgbouncer/pgbouncer.ini && \
     gosu pgbouncer pgbouncer /etc/pgbouncer/pgbouncer.ini & \
     exec uvicorn app.main:app --host 0.0.0.0 --port 80 --workers 2
 EXPOSE 80
