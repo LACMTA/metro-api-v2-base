@@ -45,5 +45,5 @@ print(f'export DB_NAME={result.path[1:]}')" > /tmp/env.sh && \
     echo "auth_file = /etc/pgbouncer/userlist.txt" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "client_login_timeout = 120" >> /etc/pgbouncer/pgbouncer.ini && \
     gosu pgbouncer pgbouncer /etc/pgbouncer/pgbouncer.ini & \
-    exec uvicorn app.main:app --host 0.0.0.0 --port 80 --workers 2
+    exec gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:80 --workers 2
 EXPOSE 80
