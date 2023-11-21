@@ -216,15 +216,25 @@ def update_gtfs_realtime_data():
     combined_stop_time_df = pd.concat(combined_stop_time_dataframes)
     combined_vehicle_position_df = gpd.GeoDataFrame(pd.concat(combined_vehicle_position_dataframes, ignore_index=True), geometry='geometry')
     combined_vehicle_position_df.crs = 'EPSG:4326'
-    # combined_vehcile_position_df.to_postgis('vehicle_position_updates', engine, if_exists='replace')
     combined_vehicle_position_df.to_postgis('vehicle_position_updates',engine,index=True,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
     combined_stop_time_df.to_sql('stop_time_updates',engine,index=True,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
     combined_trip_update_df['stop_time_json'].astype(str)
-    # combined_trip_update_dfset_index(['Symbol','Date']
     combined_trip_update_df.to_sql('trip_updates',engine,index=True,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
+
+    # Create the indexes
+    with engine.connect() as connection:
+        connection.execute(text("CREATE INDEX idx_vehicle_position_updates_route_code ON vehicle_position_updates(route_code);"))
+        connection.execute(text("CREATE INDEX idx_vehicle_position_updates_vehicle_id ON vehicle_position_updates(vehicle_id);"))
+        connection.execute(text("CREATE INDEX idx_vehicle_position_updates_trip_route_id ON vehicle_position_updates(trip_route_id);"))
+        connection.execute(text("CREATE INDEX idx_vehicle_position_updates_stop_id ON vehicle_position_updates(stop_id);"))
+        connection.execute(text("CREATE INDEX idx_stop_time_updates_trip_id ON stop_time_updates(trip_id);"))
+        connection.execute(text("CREATE INDEX idx_stop_time_updates_route_id ON stop_time_updates(route_id);"))
+        connection.execute(text("CREATE INDEX idx_trip_updates_trip_id ON trip_updates(trip_id);"))
+        connection.execute(text("CREATE INDEX idx_trip_updates_route_id ON trip_updates(route_id);"))
+
     process_end = timeit.default_timer()
-    # print('===GTFS Update process took {} seconds'.format(process_end - process_start)+"===")
     print('===GTFS Update process took {} seconds'.format(process_end - process_start)+"===")
+
     del combined_trip_update_dataframes
     del combined_stop_time_dataframes
     del combined_vehicle_position_dataframes
