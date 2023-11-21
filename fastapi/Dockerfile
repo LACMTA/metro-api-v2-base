@@ -26,6 +26,8 @@ COPY . .
 RUN useradd -ms /bin/bash pgbouncer && \
     chown -R pgbouncer:pgbouncer /etc/pgbouncer
 
+RUN pip install gevent
+
 CMD python -c "\
 import os;\
 from urllib.parse import urlparse;\
@@ -46,6 +48,6 @@ print(f'export DB_NAME={result.path[1:]}')" > /tmp/env.sh && \
     echo "auth_file = /etc/pgbouncer/userlist.txt" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "client_login_timeout = 120" >> /etc/pgbouncer/pgbouncer.ini && \
     gosu pgbouncer pgbouncer /etc/pgbouncer/pgbouncer.ini & \
-    gunicorn -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:80 app.main:app
+    gunicorn app.main:app --workers 3 --worker-class gevent --bind 0.0.0.0:80 --timeout 120 --keep-alive 120
 
 EXPOSE 80
