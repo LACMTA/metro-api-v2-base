@@ -32,6 +32,7 @@ from .models import BaseModel
 from .utils.log_helper import *
 from .utils.email_helper import *
 from .utils.db_helper import *
+from .utils.geojson_helper import *
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -434,20 +435,14 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session: AsyncSe
     cached_data = await redis.get(cache_key)
     if cached_data is not None:
         return pickle.loads(cached_data)
-
     stmt = (
-        select(models.VehiclePositions).
-        options(
-            joinedload(models.VehiclePositions.stop_time_updates).
-            joinedload(models.StopTimeUpdates.stop),
-            joinedload(models.VehiclePositions.trip_update)
-        ).
+        select(models.VehiclePositions, models.StopTimeUpdates).
+        join(models.StopTimeUpdates, 
+             and_(models.VehiclePositions.trip_id == models.StopTimeUpdates.trip_id,
+                  models.VehiclePositions.current_stop_sequence == models.StopTimeUpdates.stop_sequence)).
         filter(
             models.VehiclePositions.route_code == route_code,
             models.VehiclePositions.agency_id == agency_id,
-            models.VehiclePositions.current_stop_sequence == models.StopTimeUpdates.stop_sequence,
-            models.VehiclePositions.trip_id == models.StopTimeUpdates.trip_id,
-            models.VehiclePositions.trip_id == models.TripUpdates.trip_id
         )
     )
 
@@ -458,6 +453,8 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session: AsyncSe
         return convert_to_geojson(vehicle_positions)
 
     return vehicle_positions
+
+
 async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session,route_code: str, geojson:bool,agency_id:str):
     the_query = await session.execute(select(models.VehiclePositions).where(models.VehiclePositions.route_code == route_code,models.VehiclePositions.agency_id == agency_id).order_by(models.VehiclePositions.route_code))
     if geojson == True:

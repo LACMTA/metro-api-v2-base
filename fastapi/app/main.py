@@ -483,7 +483,7 @@ async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: Ag
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
 @cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: AsyncSession = Depends(get_db)):
-    result = await crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value)
+    result = await crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value)
     return result
 
 @app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id?}", tags=["Real-Time data"])
@@ -508,26 +508,14 @@ async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Option
     return {"message": "No vehicle_id provided"}
 
 
-
 @app.get("/{agency_id}/trip_detail/route/{route_code?}", tags=["Real-Time data"])
 @cache(expire=REALTIME_UDPATE_INTERVAL)
-async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
-    if operation == OperationEnum.ALL:
-        result = await crud.get_all_data_async(async_db, models.VehiclePositions, operation.value)
+async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional[OperationEnum] = None, geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
+    if route_code == OperationEnum.ALL:
+        result = await crud.get_all_data_async(async_db, models.VehiclePositions, route_code.value)
         return result
-    if route_code:
-        multiple_values = route_code.split(',')
-        if len(multiple_values) > 1:
-            result_array = []
-            for value in multiple_values:
-                temp_result = await crud.get_data_async(async_db, models.VehiclePositions, 'route_code', value)
-                if len(temp_result) == 0:
-                    temp_result = { "message": "route'" + route_code + "' has no live trips'" }
-                    return temp_result
-                result_array.append(temp_result)
-            return result_array
-        else:
-            result = await crud.get_data_async(async_db, models.VehiclePositions, 'route_code', route_code)
+    elif route_code:
+        result = await crud.get_data_async(async_db, models.VehiclePositions, 'route_code', route_code.value)
         return result
     return {"message": "No route_code provided"}
 
