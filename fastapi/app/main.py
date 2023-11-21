@@ -32,6 +32,8 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from collections import defaultdict
+
 
 from pydantic import BaseModel, Json, ValidationError
 import functools
@@ -39,6 +41,8 @@ import io
 import yaml
 
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import PlainTextResponse
 
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
@@ -62,6 +66,7 @@ from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
 from fastapi_pagination import Page, add_pagination, paginate
 from fastapi_pagination.ext.sqlalchemy import paginate as paginate_sqlalchemy
 from fastapi_pagination.links import Page
+from datetime import datetime, timedelta
 
 from .utils.log_helper import *
 
@@ -123,6 +128,38 @@ class EndpointFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         return record.getMessage().find(self._path) == -1
 
+class BlockRepeatedRequestsMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_requests=100, block_duration=timedelta(minutes=5)):
+        super().__init__(app)
+        self.max_requests = max_requests
+        self.block_duration = block_duration
+        self.requests = defaultdict(int)
+        self.last_request_time = defaultdict(datetime.now)
+
+    async def dispatch(self, request: Request, call_next):
+        client_ip = request.client.host
+        path = request.url.path
+
+        if path.startswith("/agencies/lametro-rail/routes/") or path.startswith("/agencies/lametro"):
+            if datetime.now() - self.last_request_time[client_ip] < self.block_duration:
+                self.requests[client_ip] += 1
+            else:
+                self.requests[client_ip] = 1
+
+            if self.requests[client_ip] > self.max_requests:
+                return PlainTextResponse("Too many requests", status_code=429)
+
+            self.last_request_time[client_ip] = datetime.now()
+
+        try:
+            response = await call_next(request)
+        except HTTPException as exc:
+            if exc.status_code == 404:  # Not Found
+                self.requests[client_ip] += 1
+            raise
+
+        return response
+    
 uvicorn_logger = logging.getLogger("uvicorn.access")
 uvicorn_logger.addFilter(EndpointFilter(path="/LACMTA/shapes/"))
 uvicorn_logger.addFilter(EndpointFilter(path="/agencies/lametro/"))
@@ -501,8 +538,8 @@ async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional
 
 @app.get("/canceled_service_summary",tags=["Canceled Service Data"])
 @cache(expire=CANCELED_UDPATE_INTERVAL)
-async def get_canceled_trip_summary(db: Session = Depends(get_db)):
-    result = crud.get_canceled_trips(db,'all')
+async def get_canceled_trip_summary(db: AsyncSession = Depends(get_async_db)):
+    result = await crud.get_canceled_trips(db,'all')
     canceled_trips_summary = {}
     total_canceled_trips = 0
     canceled_trip_json = jsonable_encoder(result)
@@ -512,7 +549,6 @@ async def get_canceled_trip_summary(db: Session = Depends(get_db)):
                 "last_update": ""}
     else:
         for trip in canceled_trip_json:
-            # route_number = standardize_string(trip["trp_route"])
             route_number = standardize_string(trip["trp_route"])
             if route_number:
                 if route_number not in canceled_trips_summary:
@@ -683,12 +719,12 @@ async def get_agency(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
 
 @app.get("/get_gopass_schools",tags=["Other data"])
 @cache(expire=GO_PASS_UPDATE_INTERVAL)
-async def get_gopass_schools(db: Session = Depends(get_db),show_missing: bool = False,combine_phone:bool = False,groupby_column:GoPassGroupEnum = None):
+async def get_gopass_schools(db: AsyncSession = Depends(get_async_db), show_missing: bool = False, combine_phone:bool = False, groupby_column:GoPassGroupEnum = None):
     if combine_phone == True:
-        result = crud.get_gopass_schools_combined_phone(db,groupby_column.value)
+        result = await crud.get_gopass_schools_combined_phone(db, groupby_column.value)
         return result
     else:
-        result = crud.get_gopass_schools(db,show_missing)
+        result = await crud.get_gopass_schools(db, show_missing)
         json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
@@ -789,15 +825,15 @@ async def startup_event():
         logger = logging.getLogger("uvicorn.app")
         logzio_formatter = logging.Formatter("%(message)s")
         logzio_uvicorn_access_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.access', 5, Config.LOGZIO_URL)
-        logzio_uvicorn_access_handler.setLevel(logging.INFO)
+        logzio_uvicorn_access_handler.setLevel(logging.WARNING)
         logzio_uvicorn_access_handler.setFormatter(logzio_formatter)
 
         logzio_uvicorn_error_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.error', 5, Config.LOGZIO_URL)
-        logzio_uvicorn_error_handler.setLevel(logging.INFO)
+        logzio_uvicorn_error_handler.setLevel(logging.WARNING)
         logzio_uvicorn_error_handler.setFormatter(logzio_formatter)
 
         logzio_app_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'fastapi.app', 5, Config.LOGZIO_URL)
-        logzio_app_handler.setLevel(logging.INFO)
+        logzio_app_handler.setLevel(logging.WARNING)
         logzio_app_handler.setFormatter(logzio_formatter)
 
         uvicorn_access_logger.addHandler(logzio_uvicorn_access_handler)

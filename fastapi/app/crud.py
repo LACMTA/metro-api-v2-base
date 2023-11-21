@@ -921,37 +921,29 @@ def get_calendar_dates(db):
     return the_query
 
 ## canceled trips
-
-def get_canceled_trips(db, trp_route: str):
+async def get_canceled_trips(db: AsyncSession, trp_route: str):
     if trp_route == 'all':
-        the_query = db.query(models.CanceledServices).filter(models.CanceledServices.trp_type == 'REG').all()
-        return the_query
+        stmt = select(models.CanceledServices).where(models.CanceledServices.trp_type == 'REG')
     else:
-        the_query = db.query(models.CanceledServices).filter(and_(models.CanceledServices.trp_route == trp_route),(models.CanceledServices.trp_type == 'REG')).all()
-        return the_query
-
+        stmt = select(models.CanceledServices).where(and_(models.CanceledServices.trp_route == trp_route, models.CanceledServices.trp_type == 'REG'))
+    
+    result = await db.execute(stmt)
+    return result.scalars().all()
 ## go pass data
-def get_gopass_schools_combined_phone(db,groupby_column='id'):
-    # the_query = db.query(models.GoPassSchools).filter(models.GoPassSchools.school != None).all()
-    the_query = db.execute(text("SELECT "+groupby_column+", string_agg(distinct(phone), ' | ') AS phone_list FROM go_pass_schools GROUP  BY 1 order by "+groupby_column+" asc;"))  
-    # temp_dictionary, temp_array = {}, []
+async def get_gopass_schools_combined_phone(db: AsyncSession, groupby_column='id'):
+    the_query = await db.execute(text("SELECT "+groupby_column+", string_agg(distinct(phone), ' | ') AS phone_list FROM go_pass_schools GROUP  BY 1 order by "+groupby_column+" asc;"))  
     temp_array = []
-    # for rowproxy in the_query:
-    #     # rowproxy.items() returns an array like [(key0, value0), (key1, value1)]
-    #     # temp_array.append(rowproxy)
-    #     return rowproxy
     results_as_dict = the_query.mappings().all()
-    # result = [{'phone':row[0],'school':row[1]} for row in the_query]
     return results_as_dict
 
-def get_gopass_schools(db, show_missing: bool):
-    if show_missing == True:
-        the_query = db.query(models.GoPassSchools).query(models.GoPassSchools).all()
-        return the_query
+async def get_gopass_schools(db: AsyncSession, show_missing: bool):
+    if show_missing:
+        stmt = select(models.GoPassSchools)
     else:
-        the_query = db.query(models.GoPassSchools).filter(models.GoPassSchools.school != None).all()
-        return the_query
-
+        stmt = select(models.GoPassSchools).where(models.GoPassSchools.school != None)
+    
+    result = await db.execute(stmt)
+    return result.scalars().all()
 # email verification utils
 
 def verify_email(payload,db: Session):
