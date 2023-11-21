@@ -451,8 +451,14 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: Asy
             try:
                 data = await asyncio.wait_for(crud.get_all_data_async(async_db, models.VehiclePositions, agency_id), timeout=120)
                 if data is not None:
-                    await websocket.send_json(data)
+                    # Publish the received data to a Redis channel
+                    await redis.publish('live_vehicle_positions', data)
                 await asyncio.sleep(10)
+                # Subscribe to the Redis channel and send any received messages to the WebSocket client
+                ch = await redis.subscribe('live_vehicle_positions')
+                while await ch.wait_message():
+                    message = await ch.get()
+                    await websocket.send_json(message)
                 # Send a ping every 10 seconds
                 await websocket.send_json({"type": "ping"})
             except asyncio.TimeoutError:
@@ -460,7 +466,6 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: Asy
     except WebSocketDisconnect:
         # Handle the WebSocket disconnect event
         print("WebSocket disconnected")
-
 
 @app.websocket("/ws/{agency_id}/vehicle_positions/{field}/{ids}")
 async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, async_db: AsyncSession = Depends(get_async_db)):
@@ -475,13 +480,19 @@ async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: Ag
                     result = await asyncio.wait_for(crud.get_data_async(async_db, model, agency_id.value, field.value, id), timeout=120)
                     if result is not None:
                         data[id] = result
+                        # Publish the received data to a Redis channel
+                        await redis.publish('live_vehicle_positions_by_ids', data)
                 except asyncio.TimeoutError:
                     raise HTTPException(status_code=408, detail="Request timed out")
             if data:
-                await websocket.send_json(data)
-            await asyncio.sleep(5)
-            # Send a ping every 5 seconds
-            await websocket.send_json({"type": "ping"})
+                await asyncio.sleep(5)
+                # Subscribe to the Redis channel and send any received messages to the WebSocket client
+                ch = await redis.subscribe('live_vehicle_positions_by_ids')
+                while await ch.wait_message():
+                    message = await ch.get()
+                    await websocket.send_json(message)
+                # Send a ping every 5 seconds
+                await websocket.send_json({"type": "ping"})
     except WebSocketDisconnect:
         # Handle the WebSocket disconnect event
         print("WebSocket disconnected")
