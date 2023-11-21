@@ -849,9 +849,8 @@ async def get_all_routes():
 @app.on_event("startup")
 async def startup_event():
     try:
-        redis_pool = await aioredis.from_url(Config.REDIS_URL)
-        redis = RedisBackend(redis_pool)
-        FastAPICache.init(backend=redis, prefix="fastapi-cache")
+        crud.redis = await aioredis.from_url(Config.REDIS_URL)
+        FastAPICache.init(backend=crud.redis, prefix="fastapi-cache")
         uvicorn_access_logger = logging.getLogger("uvicorn.access")
         uvicorn_error_logger = logging.getLogger("uvicorn.error")
         logger = logging.getLogger("uvicorn.app")
@@ -878,7 +877,6 @@ async def startup_event():
     except:
         exc_type, exc_value, exc_traceback = sys.exc_info()
         traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
