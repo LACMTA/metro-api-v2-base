@@ -88,14 +88,14 @@ Page = Page.with_custom_options(
 
 async def get_data(db: Session, key: str, fetch_func):
     # Get data from Redis
-    data = await redis.get(key)
+    data = await crud.redis.get(key)
     if data is None:
         # If data is not in Redis, get it from the database
         data = fetch_func(db, key)
         if data is None:
             return None
         # Set data in Redis
-        await redis.set(key, data)
+        await crud.redis.set(key, data)
     return data
 
 
@@ -460,10 +460,10 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: Asy
                 data = await asyncio.wait_for(crud.get_all_data_async(async_db, models.VehiclePositions, agency_id), timeout=120)
                 if data is not None:
                     # Publish the received data to a Redis channel
-                    await redis.publish('live_vehicle_positions', data)
+                    await crud.redis.publish('live_vehicle_positions', data)
                 await asyncio.sleep(10)
                 # Subscribe to the Redis channel and send any received messages to the WebSocket client
-                ch = await redis.subscribe('live_vehicle_positions')
+                ch = await crud.redis.subscribe('live_vehicle_positions')
                 while await ch.wait_message():
                     message = await ch.get()
                     await websocket.send_json(message)
@@ -489,13 +489,13 @@ async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: Ag
                     if result is not None:
                         data[id] = result
                         # Publish the received data to a Redis channel
-                        await redis.publish('live_vehicle_positions_by_ids', data)
+                        await crud.redis.publish('live_vehicle_positions_by_ids', data)
                 except asyncio.TimeoutError:
                     raise HTTPException(status_code=408, detail="Request timed out")
             if data:
                 await asyncio.sleep(5)
                 # Subscribe to the Redis channel and send any received messages to the WebSocket client
-                ch = await redis.subscribe('live_vehicle_positions_by_ids')
+                ch = await crud.redis.subscribe('live_vehicle_positions_by_ids')
                 while await ch.wait_message():
                     message = await ch.get()
                     await websocket.send_json(message)
