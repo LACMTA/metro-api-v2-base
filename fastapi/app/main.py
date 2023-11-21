@@ -79,7 +79,7 @@ from logzio.handler import LogzioHandler
 import logging
 import typing as t
 
-
+SERVER_OVERLOAD_THRESHOLD = 1.2
 ### Pagination Parameter Options (deafult pagination count, default starting page, max_limit)
 Page = Page.with_custom_options(
     size=Query(100, ge=1, le=500),
@@ -435,11 +435,19 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositi
         raise HTTPException(status_code=404, detail="Data not found")
     return data
 
+
 @app.websocket("/ws/{agency_id}/vehicle_positions")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: AsyncSession = Depends(get_async_db)):
     await websocket.accept()
     try:
         while True:
+            # Check server load
+            load1, load5, load15 = os.getloadavg()
+            if load1 > SERVER_OVERLOAD_THRESHOLD:
+                await websocket.send_json({"type": "server_overload"})
+                await websocket.close()
+                return
+
             try:
                 data = await asyncio.wait_for(crud.get_all_data_async(async_db, models.VehiclePositions, agency_id), timeout=120)
                 if data is not None:
