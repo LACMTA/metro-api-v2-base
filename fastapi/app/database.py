@@ -33,11 +33,11 @@ def get_db():
         db.close()
 
 async def get_async_db():
-    async with async_session() as db:
+    async with async_session() as asyncdb:
         try:
-            yield db
+            yield asyncdb
         finally:
-            await async_engine.dispose()
+            await asyncdb.close()
 # async def get_refreshed_db(query):
 #     async with engine.begin() as conn:
 
