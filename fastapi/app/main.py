@@ -32,6 +32,8 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from collections import defaultdict
+
 
 from pydantic import BaseModel, Json, ValidationError
 import functools
@@ -39,6 +41,8 @@ import io
 import yaml
 
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import PlainTextResponse
 
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
@@ -62,6 +66,7 @@ from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
 from fastapi_pagination import Page, add_pagination, paginate
 from fastapi_pagination.ext.sqlalchemy import paginate as paginate_sqlalchemy
 from fastapi_pagination.links import Page
+from datetime import datetime, timedelta
 
 from .utils.log_helper import *
 
@@ -123,6 +128,38 @@ class EndpointFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         return record.getMessage().find(self._path) == -1
 
+class BlockRepeatedRequestsMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_requests=100, block_duration=timedelta(minutes=5)):
+        super().__init__(app)
+        self.max_requests = max_requests
+        self.block_duration = block_duration
+        self.requests = defaultdict(int)
+        self.last_request_time = defaultdict(datetime.now)
+
+    async def dispatch(self, request: Request, call_next):
+        client_ip = request.client.host
+        path = request.url.path
+
+        if path.startswith("/agencies/lametro-rail/routes/") or path.startswith("/agencies/lametro"):
+            if datetime.now() - self.last_request_time[client_ip] < self.block_duration:
+                self.requests[client_ip] += 1
+            else:
+                self.requests[client_ip] = 1
+
+            if self.requests[client_ip] > self.max_requests:
+                return PlainTextResponse("Too many requests", status_code=429)
+
+            self.last_request_time[client_ip] = datetime.now()
+
+        try:
+            response = await call_next(request)
+        except HTTPException as exc:
+            if exc.status_code == 404:  # Not Found
+                self.requests[client_ip] += 1
+            raise
+
+        return response
+    
 uvicorn_logger = logging.getLogger("uvicorn.access")
 uvicorn_logger.addFilter(EndpointFilter(path="/LACMTA/shapes/"))
 uvicorn_logger.addFilter(EndpointFilter(path="/agencies/lametro/"))
