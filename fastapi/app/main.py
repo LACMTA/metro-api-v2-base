@@ -18,7 +18,7 @@ import pytz
 
 from datetime import timedelta, date, datetime
 
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Query
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Query, Websocket,WebSocketDisconnect
 from fastapi import Path as FastAPIPath
 # from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
@@ -398,8 +398,48 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositi
         raise HTTPException(status_code=404, detail="Data not found")
     return data
 
+@app.websocket("/ws/{agency_id}/vehicle_positions")
+async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: AsyncSession = Depends(get_async_db)):
+    await websocket.accept()
+    try:
+        while True:
+            try:
+                data = await asyncio.wait_for(crud.get_all_data_async(async_db, models.VehiclePositions, agency_id), timeout=120)
+                if data is not None:
+                    await websocket.send_json(data)
+                await asyncio.sleep(10)
+                # Send a ping every 10 seconds
+                await websocket.send_json({"type": "ping"})
+            except asyncio.TimeoutError:
+                raise HTTPException(status_code=408, detail="Request timed out")
+    except WebSocketDisconnect:
+        # Handle the WebSocket disconnect event
+        print("WebSocket disconnected")
 
 
+@app.websocket("/ws/{agency_id}/vehicle_positions/{field}/{ids}")
+async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, async_db: AsyncSession = Depends(get_async_db)):
+    await websocket.accept()
+    model = models.VehiclePositions
+    ids = ids.split(',')
+    try:
+        while True:
+            data = {}
+            for id in ids:
+                try:
+                    result = await asyncio.wait_for(crud.get_data_async(async_db, model, agency_id.value, field.value, id), timeout=120)
+                    if result is not None:
+                        data[id] = result
+                except asyncio.TimeoutError:
+                    raise HTTPException(status_code=408, detail="Request timed out")
+            if data:
+                await websocket.send_json(data)
+            await asyncio.sleep(5)
+            # Send a ping every 5 seconds
+            await websocket.send_json({"type": "ping"})
+    except WebSocketDisconnect:
+        # Handle the WebSocket disconnect event
+        print("WebSocket disconnected")
 
 ##### todo: Needs to be tested
 
