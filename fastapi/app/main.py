@@ -501,8 +501,8 @@ async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional
 
 @app.get("/canceled_service_summary",tags=["Canceled Service Data"])
 @cache(expire=CANCELED_UDPATE_INTERVAL)
-async def get_canceled_trip_summary(db: Session = Depends(get_db)):
-    result = crud.get_canceled_trips(db,'all')
+async def get_canceled_trip_summary(db: AsyncSession = Depends(get_async_db)):
+    result = await crud.get_canceled_trips(db,'all')
     canceled_trips_summary = {}
     total_canceled_trips = 0
     canceled_trip_json = jsonable_encoder(result)
@@ -512,7 +512,6 @@ async def get_canceled_trip_summary(db: Session = Depends(get_db)):
                 "last_update": ""}
     else:
         for trip in canceled_trip_json:
-            # route_number = standardize_string(trip["trp_route"])
             route_number = standardize_string(trip["trp_route"])
             if route_number:
                 if route_number not in canceled_trips_summary:
@@ -683,12 +682,12 @@ async def get_agency(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
 
 @app.get("/get_gopass_schools",tags=["Other data"])
 @cache(expire=GO_PASS_UPDATE_INTERVAL)
-async def get_gopass_schools(db: Session = Depends(get_db),show_missing: bool = False,combine_phone:bool = False,groupby_column:GoPassGroupEnum = None):
+async def get_gopass_schools(db: AsyncSession = Depends(get_async_db), show_missing: bool = False, combine_phone:bool = False, groupby_column:GoPassGroupEnum = None):
     if combine_phone == True:
-        result = crud.get_gopass_schools_combined_phone(db,groupby_column.value)
+        result = await crud.get_gopass_schools_combined_phone(db, groupby_column.value)
         return result
     else:
-        result = crud.get_gopass_schools(db,show_missing)
+        result = await crud.get_gopass_schools(db, show_missing)
         json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
