@@ -86,23 +86,6 @@ Page = Page.with_custom_options(
     size=Query(100, ge=1, le=500),
 )
 
-# Define the redis variable at the top level
-redis = None
-
-async def initialize_redis():
-    global redis
-    logging.info(f"Connecting to Redis at {Config.REDIS_URL}")
-    for i in range(5):  # Retry up to 5 times
-        try:
-            redis = await aioredis.from_url(Config.REDIS_URL)
-            break  # If the connection is successful, break out of the loop
-        except aioredis.exceptions.ConnectionError as e:
-            logging.error(f"Failed to connect to Redis: {e}")
-            if i < 4:  # If this was not the last attempt, wait a bit before retrying
-                await asyncio.sleep(5)  # Wait for 5 seconds
-            else:  # If this was the last attempt, re-raise the exception
-                raise
-
 async def get_data(db: Session, key: str, fetch_func):
     # Get data from Redis
     data = await redis.get(key)
