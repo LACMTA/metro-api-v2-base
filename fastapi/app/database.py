@@ -14,8 +14,8 @@ def create_async_uri(uri):
     return uri.replace('postgresql', 'postgresql+asyncpg')
 
 
-engine = create_engine(Config.API_DB_URI, echo=True, poolclass=NullPool)
-async_engine = create_async_engine(create_async_uri(Config.API_DB_URI), echo=True, poolclass=NullPool)
+engine = create_engine(Config.API_DB_URI, echo=False, poolclass=NullPool)
+async_engine = create_async_engine(create_async_uri(Config.API_DB_URI), echo=False, poolclass=NullPool)
 async_session = sessionmaker(async_engine, expire_on_commit=False, class_=AsyncSession)
 Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
