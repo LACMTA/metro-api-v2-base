@@ -4,7 +4,6 @@ from typing import Union, List, Dict, Optional
 from versiontag import get_version
 import traceback
 import sys
-
 import http
 import json
 import requests
@@ -14,6 +13,7 @@ import asyncio
 import aioredis
 
 import pytz
+import time
 
 
 from datetime import timedelta, date, datetime
@@ -44,13 +44,14 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import PlainTextResponse
 
+from starlette.requests import Request
+from starlette.responses import Response
+
+
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from fastapi_cache.decorator import cache
 
-
-from starlette.requests import Request
-from starlette.responses import Response
 
 # from redis import asyncio as aioredis
 from enum import Enum
@@ -233,6 +234,28 @@ class LogFilter(logging.Filter):
         return True
 
 
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, limit=100, interval=60):
+        super().__init__(app)
+        self.limit = limit
+        self.interval = interval
+        self.requests = defaultdict(list)
+
+    async def dispatch(self, request: Request, call_next):
+        client_ip = request.client.host
+        request_times = self.requests[client_ip]
+        request_times.append(time.time())
+
+        # Remove requests older than the rate limit interval
+        while request_times and request_times[0] < time.time() - self.interval:
+            request_times.pop(0)
+
+        if len(request_times) > self.limit:
+            raise HTTPException(status_code=429, detail="Too Many Requests")
+
+        response = await call_next(request)
+        return response
+
 tags_metadata = [
     {"name": "Real-Time data", "description": "Includes GTFS-RT data for Metro Rail and Metro Bus."},
     {"name": "Canceled Service Data", "description": "Canceled service data for Metro Bus and Metro Rail."},
@@ -246,6 +269,8 @@ inspector = inspect(engine)
 from sqlalchemy import Table
 
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
+app.add_middleware(RateLimitMiddleware, limit=100, interval=60)
+
 # db = connect(host=''ort=0, timeout=None, source_address=None)
 
 
