@@ -139,7 +139,7 @@ async def get_vehicle_data_async(db: AsyncSession, agency_id: str, vehicle_id: s
     return data
 
 import pickle
-async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None):
+async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None, cache_expiration: int = None):
     # Create a unique key for this query
     key = f"{model.__name__}:{agency_id}:{field_name}:{field_value}"
 
@@ -154,18 +154,22 @@ async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], a
             data = {c.key: getattr(data, c.key) for c in sqlalchemy.inspect(data).mapper.column_attrs}
         return data
 
+    # Query the database
     if field_name and field_value:
         stmt = select(model).where(getattr(model, field_name) == field_value, getattr(model, 'agency_id') == agency_id)
     else:
         stmt = select(model).where(getattr(model, 'agency_id') == agency_id)
     result = await async_session.execute(stmt)
     data = result.scalars().all()
-    return [item.to_dict() for item in data]
-    
-async def get_all_data_async(async_session: Session, model: Type[BaseModel], agency_id: str):
-    data = await get_data_async(async_session, model, agency_id)
-    return data
 
+    # Cache the result in Redis with the specified expiration time
+    await redis_connection.set(key, pickle.dumps(data), ex=cache_expiration)
+
+    return [item.to_dict() for item in data]   
+ 
+async def get_all_data_async(async_session: Session, model: Type[BaseModel], agency_id: str, cache_expiration: int = None):
+    data = await get_data_async(async_session, model, agency_id, cache_expiration=cache_expiration)
+    return data
 
 async def get_list_data_async(db: Session, model: Type[DeclarativeMeta], field: str, agency_id: str):
     stmt = select(getattr(model, field)).where(model.agency_id == agency_id).distinct()
