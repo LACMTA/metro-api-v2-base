@@ -4,3 +4,5 @@ fastapi
 httpx
 sqlalchemy
 GeoAlchemy2
+websockets
+pytest-asyncio

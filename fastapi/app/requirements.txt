@@ -23,7 +23,6 @@ shapely
 pandas
 polyline
 websockets
-fastapi-cache2[redis]
 pymemcache
 asyncio
 asyncpg

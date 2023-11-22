@@ -48,9 +48,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 
-from fastapi_cache import FastAPICache
-from fastapi_cache.backends.redis import RedisBackend
-from fastapi_cache.decorator import cache
+
 
 
 # from redis import asyncio as aioredis
@@ -86,33 +84,16 @@ Page = Page.with_custom_options(
     size=Query(100, ge=1, le=500),
 )
 
-# Define the redis variable at the top level
-redis = None
-
-async def initialize_redis():
-    global redis
-    logging.info(f"Connecting to Redis at {Config.REDIS_URL}")
-    for i in range(5):  # Retry up to 5 times
-        try:
-            redis = await aioredis.from_url(Config.REDIS_URL)
-            break  # If the connection is successful, break out of the loop
-        except aioredis.exceptions.ConnectionError as e:
-            logging.error(f"Failed to connect to Redis: {e}")
-            if i < 4:  # If this was not the last attempt, wait a bit before retrying
-                await asyncio.sleep(5)  # Wait for 5 seconds
-            else:  # If this was the last attempt, re-raise the exception
-                raise
-
 async def get_data(db: Session, key: str, fetch_func):
     # Get data from Redis
-    data = await redis.get(key)
+    data = await crud.redis_connection.get(key)
     if data is None:
         # If data is not in Redis, get it from the database
         data = fetch_func(db, key)
         if data is None:
             return None
         # Set data in Redis
-        await redis.set(key, data)
+        await crud.redis_connection.set(key, data)
     return data
 
 
@@ -372,8 +353,7 @@ GO_PASS_UPDATE_INTERVAL = 3600
 
 #### Begin GTFS-RT Routes ####
 
-@app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])
-@cache(expire=REALTIME_UDPATE_INTERVAL)     
+@app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])    
 async def get_all_trip_updates(agency_id: AgencyIdEnum, async_db: AsyncSession = Depends(get_async_db)):
     """
     Get all trip updates.
@@ -384,8 +364,7 @@ async def get_all_trip_updates(agency_id: AgencyIdEnum, async_db: AsyncSession =
         raise HTTPException(status_code=404, detail="Data not found")
     return data
 
-@app.get("/{agency_id}/trip_updates/{field}/{ids}", tags=["Real-Time data"]) 
-@cache(expire=REALTIME_UDPATE_INTERVAL)    
+@app.get("/{agency_id}/trip_updates/{field}/{ids}", tags=["Real-Time data"])    
 async def get_trip_updates_by_ids(agency_id: AgencyIdEnum, field: TripUpdatesFieldsEnum, ids: str, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
     """
     Get specific trip updates by IDs dependant on the `field` selected. IDs can be provided as a comma-separated list.
@@ -414,8 +393,7 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: TripUpdatesFi
         raise HTTPException(status_code=404, detail="Data not found")
     return data
 
-@app.get("/{agency_id}/vehicle_positions", tags=["Real-Time data"])   
-@cache(expire=REALTIME_UDPATE_INTERVAL)  
+@app.get("/{agency_id}/vehicle_positions", tags=["Real-Time data"])    
 async def get_all_vehicle_positions(agency_id: AgencyIdEnum, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
     """
     Get all vehicle positions updates.
@@ -429,8 +407,7 @@ async def get_all_vehicle_positions(agency_id: AgencyIdEnum, format: FormatEnum 
         data = to_geojson(data)
     return data
 
-@app.get("/{agency_id}/vehicle_positions/{field}/{ids}", tags=["Real-Time data"])     
-@cache(expire=REALTIME_UDPATE_INTERVAL)
+@app.get("/{agency_id}/vehicle_positions/{field}/{ids}", tags=["Real-Time data"])
 async def get_vehicle_positions_by_ids(agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
     """
     Get specific vehicle position updates by IDs dependant on the `field` selected. IDs can be provided as a comma-separated list.
@@ -449,7 +426,6 @@ async def get_vehicle_positions_by_ids(agency_id: AgencyIdEnum, field: VehiclePo
     return data
 
 @app.get("/{agency_id}/vehicle_positions/{field}", tags=["Real-Time data"])
-@cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, async_db: AsyncSession = Depends(get_async_db)):
     """
     Get a list of all values for a specific field in the vehicle positions updates.
@@ -460,38 +436,40 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositi
         raise HTTPException(status_code=404, detail="Data not found")
     return data
 
+import json
+import asyncio
+import aioredis
 
 @app.websocket("/ws/{agency_id}/vehicle_positions")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: AsyncSession = Depends(get_async_db)):
     await websocket.accept()
-    try:
-        while True:
-            # Check server load
-            load1, load5, load15 = os.getloadavg()
-            if load1 > SERVER_OVERLOAD_THRESHOLD:
-                await websocket.send_json({"type": "server_overload"})
-                await websocket.close()
-                return
 
-            try:
-                data = await asyncio.wait_for(crud.get_all_data_async(async_db, models.VehiclePositions, agency_id), timeout=120)
-                if data is not None:
-                    # Publish the received data to a Redis channel
-                    await redis.publish('live_vehicle_positions', data)
-                await asyncio.sleep(10)
-                # Subscribe to the Redis channel and send any received messages to the WebSocket client
-                ch = await redis.subscribe('live_vehicle_positions')
-                while await ch.wait_message():
-                    message = await ch.get()
-                    await websocket.send_json(message)
-                # Send a ping every 10 seconds
-                await websocket.send_json({"type": "ping"})
-            except asyncio.TimeoutError:
-                raise HTTPException(status_code=408, detail="Request timed out")
+    channel = (await crud.redis_connection.subscribe('live_vehicle_positions'))[0]
+
+    async def listen_to_redis():
+        async for message in channel.iter(encoding='utf-8'):
+            # Unserialize message with json before sending
+            message_data = json.loads(message)
+            await websocket.send_json(message_data)
+
+    listen_task = asyncio.create_task(listen_to_redis())
+
+    try:
+        data = await asyncio.wait_for(crud.get_all_data_async(async_db, models.VehiclePositions, agency_id), timeout=120)
+        if data is not None:
+            # Serialize data with json before publishing
+            data_json = json.dumps(data)
+            await crud.redis_connection.publish('live_vehicle_positions', data_json)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=408, detail="Request timed out")
     except WebSocketDisconnect:
         # Handle the WebSocket disconnect event
         print("WebSocket disconnected")
-
+    finally:
+        listen_task.cancel()
+        crud.redis_connection.unsubscribe('live_vehicle_positions')
+        crud.redis_connection.close()
+        await crud.redis_connection.wait_closed()
 @app.websocket("/ws/{agency_id}/vehicle_positions/{field}/{ids}")
 async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, async_db: AsyncSession = Depends(get_async_db)):
     await websocket.accept()
@@ -506,13 +484,13 @@ async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: Ag
                     if result is not None:
                         data[id] = result
                         # Publish the received data to a Redis channel
-                        await redis.publish('live_vehicle_positions_by_ids', data)
+                        await crud.redis_connection.publish('live_vehicle_positions_by_ids', data)
                 except asyncio.TimeoutError:
                     raise HTTPException(status_code=408, detail="Request timed out")
             if data:
                 await asyncio.sleep(5)
                 # Subscribe to the Redis channel and send any received messages to the WebSocket client
-                ch = await redis.subscribe('live_vehicle_positions_by_ids')
+                ch = await crud.redis_connection.subscribe('live_vehicle_positions_by_ids')
                 while await ch.wait_message():
                     message = await ch.get()
                     await websocket.send_json(message)
@@ -525,13 +503,11 @@ async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: Ag
 ##### todo: Needs to be tested
 
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
-@cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: AsyncSession = Depends(get_db)):
-    result = await crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value)
+    result = await crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value)
     return result
 
 @app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id?}", tags=["Real-Time data"])
-@cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
     if operation == OperationEnum.ALL:
         result = await crud.get_all_data_async(async_db, models.VehiclePositions, operation.value)
@@ -553,7 +529,6 @@ async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Option
 
 
 @app.get("/{agency_id}/trip_detail/route/{route_code?}", tags=["Real-Time data"])
-@cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional[OperationEnum] = None, geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
     if route_code == OperationEnum.ALL:
         result = await crud.get_all_data_async(async_db, models.VehiclePositions, route_code.value)
@@ -569,7 +544,6 @@ async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional
 
 
 @app.get("/canceled_service_summary",tags=["Canceled Service Data"])
-@cache(expire=CANCELED_UDPATE_INTERVAL)
 async def get_canceled_trip_summary(db: AsyncSession = Depends(get_async_db)):
     result = await crud.get_canceled_trips(db,'all')
     canceled_trips_summary = {}
@@ -594,14 +568,12 @@ async def get_canceled_trip_summary(db: AsyncSession = Depends(get_async_db)):
                 "last_updated":update_time}
 
 @app.get("/canceled_service/line/{line}",tags=["Canceled Service Data"])
-@cache(expire=CANCELED_UDPATE_INTERVAL)
 async def get_canceled_trip(db: Session = Depends(get_db),line: str = None):
     result = crud.get_canceled_trips(db,line)
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
 @app.get("/canceled_service/all",tags=["Canceled Service Data"])
-@cache(expire=CANCELED_UDPATE_INTERVAL)
 async def get_canceled_trip(db: Session = Depends(get_db)):
     result = crud.get_canceled_trips(db,'all')
     json_compatible_item_data = jsonable_encoder(result)
@@ -609,53 +581,45 @@ async def get_canceled_trip(db: Session = Depends(get_db)):
 
 ### GTFS Static data ###
 @app.get("/{agency_id}/route_stops/{route_code}",tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def populate_route_stops(agency_id: AgencyIdEnum,route_code:str, daytype: DayTypesEnum = DayTypesEnum.all, db: Session = Depends(get_db)):
     result = crud.get_gtfs_route_stops(db,route_code,daytype.value,agency_id.value)
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
 @app.get("/{agency_id}/route_stops_grouped/{route_code}",tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def populate_route_stops_grouped(agency_id: AgencyIdEnum,route_code:str, db: Session = Depends(get_db)):
     result = crud.get_gtfs_route_stops_grouped(db,route_code,agency_id.value)
     json_compatible_item_data = jsonable_encoder(result[0])
     return JSONResponse(content=json_compatible_item_data)
 
 @app.get("/calendar_dates",tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
     result = crud.get_calendar_dates(db)
     calendar_dates = jsonable_encoder(result)
     return JSONResponse(content={"calendar_dates":calendar_dates})
 
 @app.get("/{agency_id}/stop_times/route_code/{route_code}",tags=["Static data"],response_model=Page[schemas.StopTimes])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_stop_times_by_route_code_and_agency(agency_id: AgencyIdEnum,route_code, db: Session = Depends(get_db)):
     result = crud.get_stop_times_by_route_code(db,route_code,agency_id.value)
     return result
 
 
 @app.get("/{agency_id}/stop_times/trip_id/{trip_id}",tags=["Static data"],response_model=Page[schemas.StopTimes])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_stop_times_by_trip_id_and_agency(agency_id: AgencyIdEnum,trip_id, db: Session = Depends(get_db)):
     result = crud.get_stop_times_by_trip_id(db,trip_id,agency_id.value)
     return result
 
 @app.get("/{agency_id}/stops/{stop_id}",tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_stops(agency_id: AgencyIdEnum,stop_id, db: Session = Depends(get_db)):
     result = crud.get_stops_id(db,stop_id,agency_id.value)
     return result
 
 @app.get("/{agency_id}/trips/{trip_id}",tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_bus_trips(agency_id: AgencyIdEnum,trip_id, db: Session = Depends(get_db)):
     result = crud.get_trips_data(db,trip_id,agency_id.value)
     return result
 
 @app.get("/{agency_id}/shapes/{shape_id}",tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_shapes(agency_id: AgencyIdEnum,shape_id, geojson: bool = False,db: Session = Depends(get_db)):
     if shape_id == "list":
         result = crud.get_trip_shapes_list(db,agency_id.value)
@@ -664,7 +628,6 @@ async def get_shapes(agency_id: AgencyIdEnum,shape_id, geojson: bool = False,db:
     return result
 
 @app.get("/{agency_id}/trip_shapes/{shape_id}",tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_trip_shapes(agency_id: AgencyIdEnum,shape_id, db: Session = Depends(get_db)):
     if shape_id == "all":
         result = crud.get_trip_shapes_all(db,agency_id.value)
@@ -675,7 +638,6 @@ async def get_trip_shapes(agency_id: AgencyIdEnum,shape_id, db: Session = Depend
     return result
 
 @app.get("/{agency_id}/calendar/{service_id}",tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_calendar_list(agency_id: AgencyIdEnum,service_id, db: Session = Depends(get_db)):
     if service_id == "list":
         result = crud.get_calendar_list(db,agency_id.value)
@@ -685,19 +647,16 @@ async def get_calendar_list(agency_id: AgencyIdEnum,service_id, db: Session = De
 
 
 @app.get("/{agency_id}/calendar/{service_id}",tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_calendar(agency_id: AgencyIdEnum,service_id, db: Session = Depends(get_db)):
     result = crud.get_calendar_data_by_id(db,models.Calendar,service_id,agency_id.value)
     return result
 
 @app.get("/{agency_id}/routes/{route_id}",tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_routes(agency_id: AgencyIdEnum,route_id, db: Session = Depends(get_db)):
     result = crud.get_routes_by_route_id(db,route_id,agency_id.value)
     return result
 
 @app.get("/{agency_id}/route_overview", tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_route_overview(agency_id: AllAgencyIdEnum, async_db: AsyncSession = Depends(get_async_db)):
     """
     Get route overview data for all routes.
@@ -719,7 +678,6 @@ async def get_route_overview(agency_id: AllAgencyIdEnum, async_db: AsyncSession 
         return result
 
 @app.get("/{agency_id}/route_overview/{route_code}", tags=["Static data"])
-@cache(expire=STATIC_UDPATE_INTERVAL)
 async def get_route_overview_by_route_code(agency_id: AgencyIdEnum, route_code: str, async_db: AsyncSession = Depends(get_async_db)):
     """
     Get route overview data by route code.
@@ -750,7 +708,6 @@ async def get_agency(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
 #### Begin Other data endpoints ####
 
 @app.get("/get_gopass_schools",tags=["Other data"])
-@cache(expire=GO_PASS_UPDATE_INTERVAL)
 async def get_gopass_schools(db: AsyncSession = Depends(get_async_db), show_missing: bool = False, combine_phone:bool = False, groupby_column:GoPassGroupEnum = None):
     if combine_phone == True:
         result = await crud.get_gopass_schools_combined_phone(db, groupby_column.value)
@@ -846,11 +803,8 @@ def read_user(username: str, db: Session = Depends(get_db),token: str = Depends(
 async def get_all_routes():
     return [route.path for route in app.routes]
 
-@app.on_event("startup")
-async def startup_event():
+def setup_logging():
     try:
-        crud.redis = await aioredis.from_url(Config.REDIS_URL)
-        FastAPICache.init(backend=crud.redis, prefix="fastapi-cache")
         uvicorn_access_logger = logging.getLogger("uvicorn.access")
         uvicorn_error_logger = logging.getLogger("uvicorn.error")
         logger = logging.getLogger("uvicorn.app")
@@ -874,9 +828,20 @@ async def startup_event():
         uvicorn_access_logger.addFilter(LogFilter())
         uvicorn_error_logger.addFilter(LogFilter())
         logger.addFilter(LogFilter())
-    except:
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)
+    except Exception as e:
+        print(f"Failed to set up logging: {e}")
+
+class RedisNotConnected(Exception):
+    """Raised when Redis is not connected"""
+    pass
+@app.on_event("startup")
+async def startup_event():
+    try:
+        crud.redis_connection = crud.initialize_redis()
+        setup_logging()
+    except Exception as e:
+        print(f"Failed to connect to Redis: {e}")
+        raise e
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -886,7 +851,3 @@ app.add_middleware(
     expose_headers=["*"],
 )
 add_pagination(app)
-# @app.on_event("startup")
-# async def startup_redis():
-    # redis =  aioredis.from_url("redis://localhost", encoding="utf8", decode_responses=True,port=6379)
-#     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
