@@ -10,7 +10,7 @@ import pandas as pd
 
 import crython
 # import schedule
-@crython.job(second='*/'+str(main_helper.set_interval_time())+'')
+@crython.job(second='*/15')
 def gtfs_rt_scheduler():
     try:
         gtfs_rt_helper.update_gtfs_realtime_data()
