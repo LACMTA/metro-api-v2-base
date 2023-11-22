@@ -24,8 +24,6 @@ shapely
 polyline
 websockets
 redis_om
-fastapi-redis-cache
-fastapi-cache2[redis]
 asyncio
 aioredis
 sqlalchemy[asyncio]
