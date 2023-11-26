@@ -14,14 +14,50 @@ TARGET_PATH = os.path.join(CURRENT_DIRECTORY,TARGET_FOLDER)
 LOCALPATH = os.path.realpath(TARGET_PATH)
 # ftp_json_file_time = ''
 
-
-from sqlalchemy import inspect
+from sqlalchemy import inspect, Table, Column, DateTime, String, MetaData, Text
 
 inspector = inspect(engine)
 tables = inspector.get_table_names()
 if "canceled_service" in tables:
     canceled_data_frame_from_database = pd.read_sql_query('select * from "canceled_service"',con=engine)
 else:
+    # Define the structure of your table here
+
+    canceled_service_table = Table(
+        'canceled_service', MetaData(bind=engine),
+        Column('dpce_date', Text),
+        Column('dpce_assign_id', Text),
+        Column('dpce_block_disp', Text),
+        Column('pce_time_start', Text),
+        Column('pce_time_end', Text),
+        Column('pce_duration', Text),
+        Column('dpce_reason_canc', Text),
+        Column('pce_commentary', Text),
+        Column('trp_number', Text),
+        Column('trp_int_number', Text),
+        Column('m_metro_export_trip_id', Text),
+        Column('m_gtfs_trip_id', Text),
+        Column('trp_route', Text),
+        Column('trp_direction', Text),
+        Column('trp_type', Text),
+        Column('stop_description_first', Text),
+        Column('trp_time_start', Text),
+        Column('trp_time_end', Text),
+        Column('stop_description_last', Text),
+        Column('trp_block', Text),
+        Column('trp_duration', Text),
+        Column('trp_distance', Text),
+        Column('dty_number', Text),
+        Column('pce_number', Text),
+        Column('dty_type', Text),
+        Column('oa_pce_orb_number', Text),
+        Column('blk_orb_number', Text),
+        Column('trp_time_start_hour', Text),
+        Column('CostCenter', Text),
+        Column('blk_garage', Text),
+        Column('LastUpdateDate', Text)
+    )
+    canceled_service_table.create()
     canceled_data_frame_from_database = pd.DataFrame()
 
 def run_update():

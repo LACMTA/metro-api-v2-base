@@ -9,6 +9,8 @@ import time
 # from ..gtfs_rt import *
 # from ..models import *
 
+from sqlalchemy.exc import ProgrammingError
+
 import json
 import requests
 import pandas as pd
@@ -220,18 +222,24 @@ def update_gtfs_realtime_data():
     combined_stop_time_df.to_sql('stop_time_updates',engine,index=True,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
     combined_trip_update_df['stop_time_json'].astype(str)
     combined_trip_update_df.to_sql('trip_updates',engine,index=True,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
+    index_creation_statements = [
+        "CREATE INDEX idx_vehicle_position_updates_route_code ON vehicle_position_updates(route_code);",
+        "CREATE INDEX idx_vehicle_position_updates_vehicle_id ON vehicle_position_updates(vehicle_id);",
+        "CREATE INDEX idx_vehicle_position_updates_trip_route_id ON vehicle_position_updates(trip_route_id);",
+        "CREATE INDEX idx_vehicle_position_updates_stop_id ON vehicle_position_updates(stop_id);",
+        "CREATE INDEX idx_stop_time_updates_trip_id ON stop_time_updates(trip_id);",
+        "CREATE INDEX idx_stop_time_updates_route_id ON stop_time_updates(route_id);",
+        "CREATE INDEX idx_trip_updates_trip_id ON trip_updates(trip_id);",
+        "CREATE INDEX idx_trip_updates_route_id ON trip_updates(route_id);"
+    ]
 
     # Create the indexes
     with engine.connect() as connection:
-        connection.execute(text("CREATE INDEX idx_vehicle_position_updates_route_code ON vehicle_position_updates(route_code);"))
-        connection.execute(text("CREATE INDEX idx_vehicle_position_updates_vehicle_id ON vehicle_position_updates(vehicle_id);"))
-        connection.execute(text("CREATE INDEX idx_vehicle_position_updates_trip_route_id ON vehicle_position_updates(trip_route_id);"))
-        connection.execute(text("CREATE INDEX idx_vehicle_position_updates_stop_id ON vehicle_position_updates(stop_id);"))
-        connection.execute(text("CREATE INDEX idx_stop_time_updates_trip_id ON stop_time_updates(trip_id);"))
-        connection.execute(text("CREATE INDEX idx_stop_time_updates_route_id ON stop_time_updates(route_id);"))
-        connection.execute(text("CREATE INDEX idx_trip_updates_trip_id ON trip_updates(trip_id);"))
-        connection.execute(text("CREATE INDEX idx_trip_updates_route_id ON trip_updates(route_id);"))
-
+        for statement in index_creation_statements:
+            try:
+                connection.execute(text(statement))
+            except ProgrammingError as e:
+                print(f"Error creating index: {e}")
     process_end = timeit.default_timer()
     print('===GTFS Update process took {} seconds'.format(process_end - process_start)+"===")
 
