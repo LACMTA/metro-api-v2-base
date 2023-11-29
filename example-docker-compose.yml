@@ -1,0 +1,48 @@
+version: "3.7"
+
+services:
+    redis:
+        image: 'redis:latest'
+        ports:
+            - '6379:6379'
+    data-loading-service:
+        image: 'metro-api-v2-base:data-loading-service'
+        build:
+            context: ./data-loading-service
+            dockerfile: Dockerfile
+        environment:
+            # ... environment variables ...
+            REDIS_HOST: redis
+            REDIS_PORT: 6379
+            FTP_SERVER: ftp://ftp.example.com
+            FTP_USERNAME: example
+            FTP_PASS: example
+        volumes: 
+            - appdata:/app/appdata
+    fastapi:
+        ports:
+            - '80:80/tcp'
+        image: 'metro-api-v2-base:fastapi'
+        build:
+            context: ./fastapi
+            dockerfile: Dockerfile
+        environment:
+            # ... environment variables ...
+            REDIS_HOST: redis
+            REDIS_PORT: 6379
+            API_DB_URI: postgresql://postgres:postgres@postgres:5432/postgres
+            SWIFTLY_AUTH_KEY_BUS: example
+            SWIFTLY_AUTH_KEY_RAIL: example
+            ACCESS_SECRET_KEY: example
+            SWIFTLY_AUTH_KEY: example
+            HASH_KEY: example 
+            HASHING_ALGORITHM: example 
+            LOGZIO_TOKEN: example
+            LOGZIO_URL: example
+            RUNNING_ENV: local
+        volumes: 
+            - appdata:/app/appdata
+        depends_on:
+            - redis
+volumes:
+    appdata:

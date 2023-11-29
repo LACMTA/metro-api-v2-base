@@ -1,14 +1,8 @@
  Metro API v2
 
-Metro API v2 is an API for Metro's GTFS-RT data.
+Metro API v2 is an API for Metro's GTFS-RT and GTFS Static data.
 
 * [Documentation site](https://lacmta.github.io/metro-api-v2/)
-
-## Versioning
-
-Metro API v2 uses a modified version of [Semantic Versioning](https://semver.org/), with major (`X`), minor(`x`), and hotfix(`*`) releases for the numbers respectively: `X.x.*`.
-
-More versioning information can be found in [versioning.md](versioning.md)
 
 ## Getting Started
 
@@ -182,38 +176,11 @@ The `config.py` file inside the application folders sets the `TARGET_DB_SCHEMA` 
 - All GTFS endpoints require an `agency_id`.
 - If no specific value for a parameter is specified at the end, the endpoint will return all values for that parameter.
 
-## Documentation
+## Versioning
 
-We are using Docusaurus for our documentation website.
+Metro API v2 uses a modified version of [Semantic Versioning](https://semver.org/), with major (`X`), minor(`x`), and hotfix(`*`) releases for the numbers respectively: `X.x.*`.
 
-### Editing the documentation
-
-Install the packages
-
-```bash
-cd documentation
-yarn install
-```
-
-Start the `dev` server.
-```bash
-yarn start 
-```
-
-The `cd` command changes the directory you're working with. In order to work with your newly created Docusaurus site, you'll need to navigate the terminal there.
-
-The `yarn start` command builds your website locally and serves it through a development server, ready for you to view at http://localhost:3000/.
-
-Open `docs/intro.md` (this page) and edit some lines: the site **reloads automatically** and displays your changes.
-
-### Changes to the API Schema
-
-When there are changes to the OpenAPI Schema in the API you will need to regenerate the documentation based on the json file by running the command:
-
-```bash
-cd documentation
-yarn docusaurus clean-api-docs all
-```
+More versioning information can be found in [versioning.md](versioning.md)
 
 ## Extra Notes
 
